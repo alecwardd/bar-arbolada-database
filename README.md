@@ -51,14 +51,11 @@ PostgreSQL, raw imports, invoice parsing, email ingestion, and scheduled jobs st
 
 **Reconciliation as a trust mechanism.** The QuickBooks P&L comparison exists so the internal numbers can be checked against an external accounting source. For this project, trust matters more than a polished chart that nobody can verify.
 
-## Screenshots
+## Dashboard Preview
 
-Screenshots are not checked in yet because the current dashboards are backed by private business data. The right next step is to generate a small synthetic dataset, load it into a disposable local database, and capture 1-2 dashboard screenshots from that sample data only.
+The preview below uses synthetic sample values only. It is included to show the dashboard UI and workflow shape without exposing production sales, labor, vendor, invoice, payroll, or expense data.
 
-Good screenshot targets:
-
-- Home dashboard: executive overview and dashboard navigation.
-- Import Operations or Profitability: data-quality checks, missing-day coverage, or reconciliation-oriented reporting.
+![Synthetic Bar Arbolada dashboard preview](docs/screenshots/bar-arbolada-dashboard-synthetic.png)
 
 ## Quick Start
 
