@@ -1,0 +1,214 @@
+"""
+Base importer utilities.
+
+Shared logic for all CSV parsers:
+  - File hash calculation (SHA-256) for deduplication
+  - Report date extraction from filenames and headers
+  - Import log creation
+  - Section detection for multi-section Lightspeed CSVs
+"""
+
+import hashlib
+import re
+from datetime import date, datetime
+from pathlib import Path
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from src.models import ImportLog
+
+
+def file_hash(filepath: str | Path) -> str:
+    """Compute SHA-256 hash of file contents for deduplication."""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def check_duplicate(session: Session, fhash: str) -> Optional[ImportLog]:
+    """Check if a file has already been imported (by content hash)."""
+    return session.query(ImportLog).filter(ImportLog.file_hash == fhash).first()
+
+
+def create_import_log(
+    session: Session,
+    filename: str,
+    import_type: str,
+    report_date_start: Optional[date] = None,
+    report_date_end: Optional[date] = None,
+    file_hash_val: Optional[str] = None,
+) -> ImportLog:
+    """Create a new import log entry."""
+    log = ImportLog(
+        filename=filename,
+        import_type=import_type,
+        report_date_start=report_date_start,
+        report_date_end=report_date_end,
+        file_hash=file_hash_val,
+        status="pending",
+    )
+    session.add(log)
+    session.flush()  # Get the ID without committing
+    return log
+
+
+def parse_date_range_from_header(line: str) -> tuple[Optional[date], Optional[date]]:
+    """
+    Parse date range from Lightspeed CSV header line.
+
+    Examples:
+        '02-04-2026 to 02-04-2026'  -> (date(2026, 2, 4), date(2026, 2, 4))
+    """
+    match = re.search(r"(\d{2}-\d{2}-\d{4})\s+to\s+(\d{2}-\d{2}-\d{4})", line)
+    if match:
+        start = datetime.strptime(match.group(1), "%m-%d-%Y").date()
+        end = datetime.strptime(match.group(2), "%m-%d-%Y").date()
+        return start, end
+    return None, None
+
+
+def parse_date_range_from_filename(filename: str) -> tuple[Optional[date], Optional[date]]:
+    """
+    Parse date range from Lightspeed export filename.
+
+    Examples:
+        'sales-report--2026-02-04-to-2026-02-04--example-bar.csv'
+            -> (date(2026, 2, 4), date(2026, 2, 4))
+        'Category list - 2026-02-06 - Example Bar.csv'
+            -> (date(2026, 2, 6), date(2026, 2, 6))
+    """
+    # Pattern 1: report--YYYY-MM-DD-to-YYYY-MM-DD--
+    match = re.search(r"(\d{4}-\d{2}-\d{2})-to-(\d{4}-\d{2}-\d{2})", filename)
+    if match:
+        start = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        end = datetime.strptime(match.group(2), "%Y-%m-%d").date()
+        return start, end
+
+    # Pattern 2: list - YYYY-MM-DD - (catalog exports, single date)
+    match = re.search(r"(\d{4}-\d{2}-\d{2})", filename)
+    if match:
+        d = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        return d, d
+
+    return None, None
+
+
+def parse_datetime_str(s: str) -> Optional[datetime]:
+    """
+    Parse Lightspeed datetime strings.
+
+    Examples:
+        '2/4/2026 10:55 pm' -> datetime(2026, 2, 4, 22, 55)
+        '2/5/2026 12:16 am' -> datetime(2026, 2, 5, 0, 16)
+    """
+    if not s or not s.strip():
+        return None
+    s = s.strip()
+
+    for fmt in [
+        "%m/%d/%Y %I:%M %p",
+        "%m/%d/%Y %I:%M:%S %p",
+        "%m/%d/%Y %H:%M",
+        "%m/%d/%Y",
+        "%Y-%m-%d",
+    ]:
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def parse_date_str(s: str) -> Optional[date]:
+    """Parse date string (YYYY-MM-DD or M/D/YYYY)."""
+    dt = parse_datetime_str(s)
+    return dt.date() if dt else None
+
+
+def safe_decimal(val: str) -> Optional[float]:
+    """Safely convert string to float, returning None for empty/invalid."""
+    if val is None:
+        return None
+    val = str(val).strip().replace(",", "")
+    if not val or val == "":
+        return None
+    try:
+        return float(val)
+    except ValueError:
+        return None
+
+
+def safe_int(val: str) -> Optional[int]:
+    """Safely convert string to int, returning None for empty/invalid."""
+    f = safe_decimal(val)
+    return int(f) if f is not None else None
+
+
+def safe_bool(val: str) -> Optional[bool]:
+    """Convert Lightspeed Yes/No/0/1 to boolean."""
+    if val is None:
+        return None
+    val = str(val).strip().lower()
+    if val in ("yes", "1", "true"):
+        return True
+    if val in ("no", "0", "false"):
+        return False
+    return None
+
+
+def read_csv_lines(filepath: str | Path) -> list[str]:
+    """Read CSV file and return lines, handling BOM and encoding issues."""
+    filepath = Path(filepath)
+    for encoding in ["utf-8-sig", "utf-8", "latin-1"]:
+        try:
+            return filepath.read_text(encoding=encoding).splitlines()
+        except UnicodeDecodeError:
+            continue
+    raise ValueError(f"Could not decode file: {filepath}")
+
+
+def detect_report_type(filepath: str | Path) -> str:
+    """
+    Detect report type from filename or first line.
+
+    Returns one of:
+      'categories', 'items', 'modifier_groups', 'modifiers',
+      'display_groups', 'sales', 'checks', 'product_mix',
+      'comps', 'voids', 'payments', 'labor'
+    """
+    name = Path(filepath).name.lower()
+
+    type_map = {
+        "category list": "categories",
+        "item list": "items",
+        "modifier groups": "modifier_groups",
+        "modifier list": "modifiers",
+        "display groups": "display_groups",
+        "sales-report": "sales",
+        "checks-report": "checks",
+        "product-mix-report": "product_mix",
+        "comps-report": "comps",
+        "voids-report": "voids",
+        "payments-report": "payments",
+        "labor-report": "labor",
+    }
+
+    for pattern, rtype in type_map.items():
+        if pattern in name:
+            return rtype
+
+    # Fallback: check first line
+    lines = read_csv_lines(filepath)
+    if lines:
+        first = lines[0].lower()
+        for keyword in ["sales report", "check detail", "product mix", "comps report",
+                        "voids report", "payments report", "labor report"]:
+            if keyword in first:
+                for pattern, rtype in type_map.items():
+                    if keyword.split()[0] in pattern:
+                        return rtype
+
+    return "unknown"

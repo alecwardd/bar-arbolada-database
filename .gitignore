@@ -1,0 +1,49 @@
+# Environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data (raw files are large and may contain sensitive info)
+data/raw/
+data/staging/
+raw-csvs-before-pos-changes/
+raw-csvs-after-pos-changes/
+raw-inventory-csvs/
+raw-invoices-unedited/
+raw-pl-reports/
+reports/
+logs/
+tmp_*.csv
+tmp_*.json
+tmp_*.py
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+
+# Tooling caches
+.cursor/
+.pytest_cache/
+.benchmarks/
+nul
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build
+*.egg-info/
+dist/
+build/

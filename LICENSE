@@ -1,0 +1,15 @@
+Source-Available Portfolio Notice
+
+Copyright (c) 2026 Alec Ward. All rights reserved.
+
+This repository is shared publicly as a portfolio sample for review of the
+project structure, schema, ingestion pipeline, dashboard code, tests, and
+deployment approach.
+
+You may read and evaluate the source code for hiring, portfolio, or educational
+review. You may not copy, redistribute, sublicense, sell, host, or use this code
+in production without written permission from the copyright holder.
+
+Production data, credentials, raw exports, invoices, generated reports, local
+database contents, and business-specific configuration are intentionally
+excluded from this repository.

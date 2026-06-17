@@ -1,0 +1,27 @@
+# Bar Arbolada Analytics System - Dependencies
+# Install: pip install -r requirements.txt
+
+# Database
+psycopg2-binary
+sqlalchemy>=2.0
+alembic
+
+# Data Processing
+pandas
+polars
+
+# Web API (for future use)
+fastapi
+uvicorn[standard]
+
+# Dashboards
+streamlit
+plotly
+
+# PDF / Invoice Parsing
+pdfplumber
+pytesseract
+
+# Utilities
+python-dotenv
+python-dateutil

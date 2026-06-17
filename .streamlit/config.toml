@@ -1,0 +1,9 @@
+[server]
+# Poll-based watching is more reliable on Windows than OS-event-based watching.
+# Prevents race conditions where a page file change is detected before its
+# dependency modules have been reloaded, causing ImportError on first load.
+fileWatcherType = "poll"
+runOnSave = true
+
+[runner]
+fastReruns = false
