@@ -1992,12 +1992,14 @@ def get_full_pnl(start: date = None, end: date = None) -> dict:
 
 
 def get_reorder_items() -> pd.DataFrame:
-    """Get items currently flagged for reorder."""
+    """Get items currently flagged for reorder (latest ledger date)."""
     return _q("""
         SELECT
             i.name AS item_name,
             i.category,
             i.unit_of_measure,
+            i.unit_cost,
+            i.inventory_tier,
             i.par_level,
             i.reorder_point,
             l.closing_qty,
@@ -2005,12 +2007,14 @@ def get_reorder_items() -> pd.DataFrame:
             l.ledger_date,
             v.name AS vendor_name,
             v.order_deadline_day,
+            v.delivery_days,
             v.lead_time_days
         FROM inv_daily_ledger l
         JOIN inv_items i ON l.inv_item_id = i.id
         LEFT JOIN inv_vendors v ON i.primary_vendor_id = v.id
         WHERE l.reorder_alert = TRUE
           AND l.ledger_date = (SELECT MAX(ledger_date) FROM inv_daily_ledger)
+          AND i.status = 'active'
         ORDER BY l.days_of_cover ASC NULLS FIRST
     """)
 

@@ -2,6 +2,7 @@
 
 Read `README.md` first (architecture, data boundaries), then the runbooks in
 `planning-documents/` for the task at hand. Schema lives under `alembic/`.
+Accepted architecture decisions live under `docs/adr/` (e.g. inventory ledger SoT).
 
 Core rules: production data, credentials (`.env`), raw CSVs/invoices, and
 QuickBooks exports are local-only and never leave this repo. SQL-backed facts

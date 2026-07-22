@@ -653,7 +653,7 @@ class InvItem(Base):
     )  # how you BUY it from vendor: 'case', 'keg', 'bag', 'bottle', etc.
     current_qty = Column(
         Numeric(10, 2), nullable=True
-    )  # bottles/units currently on hand (supports partials: 0.5, 36.5)
+    )  # manual convenience / UI field only — NOT stock SoT; see inv_daily_ledger + docs/adr/0001
     standard_pour_oz = Column(
         Numeric(5, 2), nullable=True
     )  # pour size per serving in oz (1.5 spirits, 5.0 wine, 16.0 draft)
