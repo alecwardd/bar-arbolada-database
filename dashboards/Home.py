@@ -24,6 +24,7 @@ from src.analytics.queries import (
     get_full_pnl,
     get_reorder_items,
 )
+from dashboards.theme import inject_base_css, FOREST, CORAL, SUCCESS, DANGER, INFO, MUTED
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 
@@ -36,37 +37,7 @@ st.set_page_config(
 
 # ── Custom CSS ───────────────────────────────────────────────────────────────
 
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; }
-
-    /* KPI metric cards — inherit theme colors */
-    .stMetric {
-        border-radius: 10px;
-        padding: 14px 16px;
-        border-left: 4px solid #2d6a4f;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.6rem !important;
-        font-weight: 700 !important;
-    }
-    div[data-testid="stMetricDelta"] {
-        font-size: 0.85rem !important;
-    }
-
-    /* Typography */
-    h1 { font-weight: 800; letter-spacing: -0.02em; }
-    h2 { font-weight: 700; color: #1a1a2e; margin-top: 0.5rem; }
-    h3 { font-weight: 600; color: #16213e; }
-
-    /* Section dividers */
-    .section-divider {
-        border: none;
-        border-top: 2px solid #e9ecef;
-        margin: 1.5rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+inject_base_css()
 
 # ── Header ───────────────────────────────────────────────────────────────────
 
@@ -275,7 +246,7 @@ fig.add_trace(go.Bar(
     x=chart_df["trading_day"],
     y=chart_df["net_sales"],
     name="Daily Sales",
-    marker=dict(color="#2d6a4f", opacity=0.75),
+    marker=dict(color=FOREST, opacity=0.75),
     hovertemplate="<b>%{x|%a %b %d, %Y}</b><br>Net Sales: $%{y:,.0f}<extra></extra>",
 ))
 
@@ -285,7 +256,7 @@ fig.add_trace(go.Scatter(
     y=chart_df["rolling_7d"],
     name="7-Day Average",
     mode="lines",
-    line=dict(color="#e76f51", width=3, shape="spline"),
+    line=dict(color=CORAL, width=3, shape="spline"),
     hovertemplate="<b>%{x|%a %b %d}</b><br>7-Day Avg: $%{y:,.0f}<extra></extra>",
 ))
 
@@ -338,9 +309,9 @@ with col_left:
             textposition="outside",
             textfont=dict(size=11),
             connector={"line": {"width": 1}},
-            increasing={"marker": {"color": "#22c55e"}},
-            decreasing={"marker": {"color": "#ef4444"}},
-            totals={"marker": {"color": "#3b82f6"}},
+            increasing={"marker": {"color": SUCCESS}},
+            decreasing={"marker": {"color": DANGER}},
+            totals={"marker": {"color": INFO}},
         ))
         fig_pnl.update_layout(
             **CHART_LAYOUT,
@@ -425,7 +396,7 @@ with col_right:
         fig_dow.add_hline(
             y=overall_avg,
             line_dash="dash",
-            line_color="#94a3b8",
+            line_color=MUTED,
             line_width=1.5,
             annotation_text=f"Avg: ${overall_avg:,.0f}",
             annotation_position="top right",
