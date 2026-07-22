@@ -18,6 +18,7 @@ raw-invoices-unedited/
 raw-pl-reports/
 reports/
 logs/
+scratch_*.log
 tmp_*.csv
 tmp_*.json
 tmp_*.py
