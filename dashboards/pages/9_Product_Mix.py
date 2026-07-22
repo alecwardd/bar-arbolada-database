@@ -20,12 +20,11 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 
 from src.analytics.queries import (
-    get_sales_date_range,
-    get_full_product_mix,
     get_top_sellers,
     get_category_mix_summary,
     get_product_mix_trend,
 )
+from dashboards.data import get_sales_date_range, get_full_product_mix  # cached
 from dashboards.period import period_selector
 
 st.set_page_config(page_title="Product Mix | Bar Arbolada", page_icon="🍔", layout="wide")

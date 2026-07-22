@@ -17,8 +17,6 @@ from plotly.subplots import make_subplots
 from datetime import date
 
 from src.analytics.queries import (
-    get_sales_date_range,
-    get_full_pnl,
     get_cogs_trend,
     get_cogs_vs_purchases,
     get_cogs_by_category_trend,
@@ -37,6 +35,7 @@ from src.analytics.queries import (
     get_cost_data_health,
     get_cost_outlier_items,
 )
+from dashboards.data import get_sales_date_range, get_full_pnl  # cached
 from dashboards.period import period_selector
 
 st.set_page_config(page_title="COGS Deep Dive | Bar Arbolada", page_icon="📉", layout="wide")

@@ -18,7 +18,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import date, timedelta
 
-from src.analytics.queries import (
+# Cached wrappers (dashboards.data) instead of the raw query layer.
+from dashboards.data import (
     get_daily_sales,
     get_sales_date_range,
     get_full_pnl,
