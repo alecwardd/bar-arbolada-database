@@ -51,6 +51,8 @@ PostgreSQL, raw imports, invoice parsing, email ingestion, and scheduled jobs st
 
 **Reconciliation as a trust mechanism.** The QuickBooks P&L comparison exists so the internal numbers can be checked against an external accounting source. For this project, trust matters more than a polished chart that nobody can verify.
 
+**Inventory ledger as on-hand source of truth.** Theoretical stock and reorder signals come from `inv_daily_ledger`, not `inv_items.current_qty`. See [`docs/adr/0001-inventory-ledger-source-of-truth.md`](docs/adr/0001-inventory-ledger-source-of-truth.md).
+
 ## Dashboard Preview
 
 The preview below uses synthetic sample values only. It is included to show the dashboard UI and workflow shape without exposing production sales, labor, vendor, invoice, payroll, or expense data.
