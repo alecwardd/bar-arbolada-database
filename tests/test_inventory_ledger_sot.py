@@ -44,4 +44,37 @@ def test_row_mapper_prefers_closing_qty():
     assert row["name"] == "Espolon Blanco"
     assert row["qty"] == 1.5
     assert row["par"] == 6.0
+    assert row["cost"] == 28.0
+    assert row["tier"] == "A"
     assert row["vendor_name"] == "RNDC"
+    assert row["delivery_days"] == "thursday"
+
+
+def test_row_mapper_handles_get_reorder_items_shape():
+    """Fields that used to be missing from get_reorder_items must not become $0.00."""
+    from scripts.reorder_report import _format_item_line, _row_from_mapping
+
+    # Historical / minimal dashboard shape before unit_cost/tier/delivery were added.
+    row = _row_from_mapping(
+        {
+            "item_name": "Espolon Blanco",
+            "category": "Spirits",
+            "unit_of_measure": "bottle",
+            "par_level": 6,
+            "reorder_point": 2,
+            "closing_qty": 1.5,
+            "days_of_cover": 3.0,
+            "ledger_date": "2026-07-22",
+            "vendor_name": "RNDC",
+            "order_deadline_day": "tuesday",
+            "lead_time_days": 2,
+        }
+    )
+    assert row["name"] == "Espolon Blanco"
+    assert row["qty"] == 1.5
+    assert row["par"] == 6.0
+    assert row["cost"] is None
+    assert row["tier"] is None
+    assert row["delivery_days"] is None
+    assert "$0.00" not in _format_item_line(row)
+    assert "$?.??" in _format_item_line(row)

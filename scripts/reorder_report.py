@@ -51,7 +51,11 @@ def days_until(target_day_name, from_date=None):
 
 
 def _row_from_mapping(r) -> dict:
-    """Normalize a ledger-backed mapping / Series into a print row."""
+    """Normalize a ledger-backed mapping / Series into a print row.
+
+    Missing optional fields stay ``None`` (never fabricated as ``0.0`` / empty
+    strings) so callers can render unknowns distinctly from real zeros.
+    """
     qty = r.get("closing_qty")
     par = r.get("par_level")
     cost = r.get("unit_cost")
@@ -59,7 +63,7 @@ def _row_from_mapping(r) -> dict:
         "name": r.get("item_name") or r.get("name"),
         "category": r.get("category"),
         "qty": float(qty) if qty is not None else 0.0,
-        "cost": float(cost) if cost is not None else 0.0,
+        "cost": float(cost) if cost is not None else None,
         "tier": r.get("inventory_tier"),
         "par": float(par) if par is not None else None,
         "vendor_name": r.get("vendor_name"),
@@ -68,6 +72,20 @@ def _row_from_mapping(r) -> dict:
         "lead_time_days": r.get("lead_time_days"),
         "days_of_cover": r.get("days_of_cover"),
     }
+
+
+def _format_item_line(it: dict) -> str:
+    """One printed line; omit fabricated $0.00 when cost is unknown."""
+    par_info = f"  par={it['par']:.0f}" if it["par"] is not None else ""
+    cover = it.get("days_of_cover")
+    cover_info = f"  cover={float(cover):.1f}d" if cover is not None else ""
+    tier = it["tier"] or "?"
+    cost = it.get("cost")
+    cost_info = f"${cost:<8.2f}" if cost is not None else "$?.??   "
+    return (
+        f"    {it['name']:<28} qty={it['qty']:<6.1f} "
+        f"{cost_info} tier={tier}{par_info}{cover_info}"
+    )
 
 
 def load_ledger_reorder_rows(threshold: float | None = None) -> list[dict]:
@@ -164,24 +182,13 @@ def run_report(threshold=None):
         print(f"    Delivery: {delivery or '?'}")
 
         for it in sorted(vendor_items, key=lambda x: x["qty"]):
-            par_info = f"  par={it['par']:.0f}" if it["par"] is not None else ""
-            cover = it.get("days_of_cover")
-            cover_info = f"  cover={float(cover):.1f}d" if cover is not None else ""
-            tier = it["tier"] or "?"
-            print(
-                f"    {it['name']:<28} qty={it['qty']:<6.1f} "
-                f"${it['cost']:<8.2f} tier={tier}{par_info}{cover_info}"
-            )
+            print(_format_item_line(it))
         print()
 
     if no_vendor:
         print("--- NO VENDOR ASSIGNED ---")
         for it in sorted(no_vendor, key=lambda x: x["qty"]):
-            tier = it["tier"] or "?"
-            print(
-                f"    {it['name']:<28} qty={it['qty']:<6.1f} "
-                f"${it['cost']:<8.2f} tier={tier}"
-            )
+            print(_format_item_line(it))
         print()
 
     critical = [i for i in items if i["qty"] <= 0.5]
