@@ -44,8 +44,8 @@ def _amount_key(val) -> int | None:
     """
     Normalize a money value for deduping.
 
-    DB stores amounts as Numeric(10,2); CSV parsing yields floats. Convert to
-    integer cents via decimal quantization so float noise never splits a match.
+    DB stores amounts as Numeric(10,2). Convert to integer cents via Decimal
+    quantization so parsing/DB representation differences never split a match.
     """
     if val is None:
         return None

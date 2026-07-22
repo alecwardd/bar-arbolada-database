@@ -11,8 +11,9 @@ Shared logic for all CSV parsers:
 import hashlib
 import re
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from sqlalchemy.orm import Session
 
@@ -212,23 +213,33 @@ def parse_date_str(s: str) -> Optional[date]:
     return dt.date() if dt else None
 
 
-def safe_decimal(val: str) -> Optional[float]:
-    """Safely convert string to float, returning None for empty/invalid."""
+def safe_decimal(val: Union[str, int, float, Decimal, None]) -> Optional[Decimal]:
+    """Safely convert a CSV/cell value to Decimal, returning None for empty/invalid.
+
+    Uses Decimal(string) — never float — so money and hours keep exact scale
+    into Numeric columns.
+    """
     if val is None:
         return None
-    val = str(val).strip().replace(",", "")
-    if not val or val == "":
+    if isinstance(val, Decimal):
+        return val
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, int):
+        return Decimal(val)
+    s = str(val).strip().replace(",", "")
+    if not s:
         return None
     try:
-        return float(val)
-    except ValueError:
+        return Decimal(s)
+    except InvalidOperation:
         return None
 
 
-def safe_int(val: str) -> Optional[int]:
+def safe_int(val: Union[str, int, float, Decimal, None]) -> Optional[int]:
     """Safely convert string to int, returning None for empty/invalid."""
-    f = safe_decimal(val)
-    return int(f) if f is not None else None
+    d = safe_decimal(val)
+    return int(d) if d is not None else None
 
 
 def safe_bool(val: str) -> Optional[bool]:

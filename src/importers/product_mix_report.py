@@ -152,12 +152,11 @@ def import_product_mix_report(session: Session, filepath: str | Path) -> int:
         pmix.item_identifier = (row.get("Identifier") or "").strip() or None
         pmix.import_log_id = log.id
 
-        # Use database cost (pos_items.cost) when available; fall back to CSV
-        # Normalize to Decimal so we never mix float and Decimal (safe_decimal returns float).
+        # Prefer pos_items.cost when present; otherwise use CSV Cost / Gross Profit.
         unit_cost = db_costs.get(item_name)
         if unit_cost and pmix.qty_sold:
             pmix.cost = pmix.qty_sold * unit_cost
-            net = Decimal(str(pmix.net_sales)) if pmix.net_sales is not None else Decimal("0")
+            net = pmix.net_sales if pmix.net_sales is not None else Decimal("0")
             pmix.gross_profit = net - pmix.cost
         else:
             pmix.cost = safe_decimal(row.get("Cost"))
