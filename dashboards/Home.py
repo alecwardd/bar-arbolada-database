@@ -50,9 +50,13 @@ start_date, end_date = p.start, p.end
 prior_start, prior_end = p.prior_start, p.prior_end
 period_length = p.length_days
 
-# Load data
+# Load data. If the prior window ends before available history (e.g. All Time),
+# treat comparison as unavailable instead of querying a pre-data range.
 df = get_daily_sales(start_date, end_date)
-df_prior = get_daily_sales(prior_start, prior_end)
+if prior_end < min_date:
+    df_prior = pd.DataFrame()
+else:
+    df_prior = get_daily_sales(prior_start, prior_end)
 
 if df.empty:
     st.warning("No sales data for the selected period. Try a different date range or import data first.")
