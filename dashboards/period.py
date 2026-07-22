@@ -101,7 +101,11 @@ def period_selector(min_date: date, max_date: date, *, location: str = "sidebar"
 
     length = (end - start).days + 1
     prior_end = start - timedelta(days=1)
-    prior_start = max(prior_end - timedelta(days=length - 1), min_date)
+    # Do not clamp to min_date: clamping when start == min_date (e.g. All Time)
+    # inverts the interval (prior_start > prior_end). Keep a same-length prior
+    # window even when it predates available data; callers treat empty results
+    # as "no comparison".
+    prior_start = prior_end - timedelta(days=length - 1)
 
     return Period(
         start=start,

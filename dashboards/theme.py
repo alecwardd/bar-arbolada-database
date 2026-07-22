@@ -61,7 +61,7 @@ def style_fig(fig, *, legend_top: bool = True):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=10, r=10, t=40, b=10),
-        hoverlabel=dict(font_family=_FONT_FAMILY),
+        hoverlabel=dict(font=dict(family=_FONT_FAMILY)),
     )
     if legend_top:
         fig.update_layout(
