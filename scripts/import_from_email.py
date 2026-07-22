@@ -24,7 +24,7 @@ from sqlalchemy import func
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.import_all import import_directory
+from scripts.import_all import import_files
 from src.config import PROJECT_ROOT, get_session
 from src.email_sources import LocalDirectoryEmailSource, ImapEmailSource, save_attachments
 from src.operations.import_status import write_snapshot
@@ -197,6 +197,30 @@ def _iso(d) -> str | None:
     return d.isoformat() if d else None
 
 
+def select_processed_message_ids(
+    message_paths: dict[str, list[Path]],
+    results: dict[Path, bool],
+) -> tuple[list[str], dict[str, list[Path]]]:
+    """
+    Decide which messages are safe to mark processed.
+
+    A message is fully processed only when EVERY file it contributed imported
+    successfully. Returns (fully_ok_message_ids, failed_report) where
+    failed_report maps a message id to the list of its files that failed. This is
+    the guard against the IMAP adapter marking a message ``\\Seen`` — and thus
+    permanently dropping it — when only some of its attachments imported.
+    """
+    fully_ok_ids: list[str] = []
+    failed_report: dict[str, list[Path]] = {}
+    for message_id, paths in message_paths.items():
+        failed = [p for p in paths if not results.get(p, False)]
+        if failed:
+            failed_report[message_id] = failed
+        else:
+            fully_ok_ids.append(message_id)
+    return fully_ok_ids, failed_report
+
+
 def main() -> None:
     args = _parse_args()
     source = _build_source(args)
@@ -210,17 +234,42 @@ def main() -> None:
     print(f"[INFO] Run staging dir: {run_staging_dir}")
 
     messages = source.list_new_messages()
-    saved_paths, processed_message_ids = save_attachments(messages, run_staging_dir)
+    saved_paths, message_paths = save_attachments(messages, run_staging_dir)
 
     print(f"[INFO] Messages fetched: {len(messages)}")
     print(f"[INFO] CSV attachments saved: {len(saved_paths)}")
 
     if saved_paths:
-        import_directory(run_staging_dir, archive=args.archive, archive_subdir=args.archive_subdir)
+        archive_dir = (run_staging_dir / args.archive_subdir) if args.archive else None
+        import_session = get_session()
+        try:
+            results = import_files(import_session, saved_paths, archive_dir=archive_dir)
+        finally:
+            import_session.close()
 
-        if args.mark_processed:
-            source.mark_processed(processed_message_ids)
-            print(f"[INFO] Marked {len(processed_message_ids)} message(s) as processed")
+        # A message is only "processed" if EVERY attachment it contributed
+        # imported successfully. Partially-failed messages are left untouched so
+        # the IMAP adapter re-delivers them next run (already-imported siblings are
+        # idempotent via the content-hash guard). Failed files stay in the run
+        # staging dir as a lightweight dead-letter for inspection.
+        fully_ok_ids, failed_report = select_processed_message_ids(message_paths, results)
+
+        if failed_report:
+            total_failed = sum(len(v) for v in failed_report.values())
+            print(
+                f"[WARN] {len(failed_report)} message(s) had {total_failed} attachment "
+                f"failure(s); left unprocessed for retry. Files remain in "
+                f"{run_staging_dir}:"
+            )
+            for message_id, failed in failed_report.items():
+                for p in failed:
+                    print(f"        [FAILED] {message_id}: {p.name}")
+
+        if args.mark_processed and fully_ok_ids:
+            source.mark_processed(fully_ok_ids)
+            print(f"[INFO] Marked {len(fully_ok_ids)} fully-imported message(s) as processed")
+        elif args.mark_processed:
+            print("[INFO] No fully-imported messages to mark as processed")
     else:
         print("[INFO] No new CSV attachments to import")
 

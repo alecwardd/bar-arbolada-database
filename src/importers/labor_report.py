@@ -58,8 +58,9 @@ def import_labor_report(session: Session, filepath: str | Path) -> int:
 
     lines = read_csv_lines(filepath)
     if len(lines) < 5:
-        print(f"  [ERROR] File too short: {filepath.name}")
-        return 0
+        # Raise (do not return 0): import_file treats count>=0 as success, which
+        # would mark the IMAP message \\Seen and permanently drop a bad attachment.
+        raise ValueError(f"File too short: {filepath.name}")
 
     date_start, date_end = parse_date_range_from_header(lines[1])
     log = create_import_log(

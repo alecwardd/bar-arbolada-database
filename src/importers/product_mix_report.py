@@ -82,13 +82,13 @@ def import_product_mix_report(session: Session, filepath: str | Path) -> int:
 
     lines = read_csv_lines(filepath)
     if len(lines) < 4:
-        print(f"  [ERROR] File too short: {filepath.name}")
-        return 0
+        # Raise (do not return 0): import_file treats count>=0 as success, which
+        # would mark the IMAP message \\Seen and permanently drop a bad attachment.
+        raise ValueError(f"File too short: {filepath.name}")
 
     date_start, date_end = parse_date_range_from_header(lines[1])
     if not date_start:
-        print(f"  [ERROR] Could not parse date from: {lines[1]}")
-        return 0
+        raise ValueError(f"Could not parse date from: {lines[1]}")
 
     if date_start != date_end and _check_daily_overlap(session, date_start, date_end):
         print(

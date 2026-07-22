@@ -42,19 +42,23 @@ class EmailSource(Protocol):
 def save_attachments(
     messages: list[EmailMessage],
     target_dir: Path,
-) -> tuple[list[Path], list[str]]:
+) -> tuple[list[Path], dict[str, list[Path]]]:
     """
     Save CSV attachments to target_dir.
 
     Returns:
-      (saved_paths, source_message_ids_with_saved_attachments)
+      (saved_paths, message_paths)
+
+    where ``message_paths`` maps each source message id to the list of files that
+    were saved from it. Callers use this map to mark a message processed ONLY when
+    every one of its attachments imported successfully — a message is not "done"
+    just because its bytes reached disk.
     """
     target_dir.mkdir(parents=True, exist_ok=True)
     saved: list[Path] = []
-    message_ids: list[str] = []
+    message_paths: dict[str, list[Path]] = {}
 
     for msg in messages:
-        saved_for_message = 0
         for att in msg.attachments:
             # Keep only CSV reports for this pipeline.
             if not att.filename.lower().endswith(".csv"):
@@ -75,9 +79,6 @@ def save_attachments(
 
             out.write_bytes(att.content_bytes)
             saved.append(out)
-            saved_for_message += 1
+            message_paths.setdefault(msg.message_id, []).append(out)
 
-        if saved_for_message > 0:
-            message_ids.append(msg.message_id)
-
-    return saved, message_ids
+    return saved, message_paths
