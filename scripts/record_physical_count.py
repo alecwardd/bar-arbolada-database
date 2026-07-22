@@ -13,8 +13,13 @@ CSV format (simple two-column):
 Or run interactively:
     python scripts/record_physical_count.py --interactive
 
-Creates an inv_counts header + inv_count_lines for each item,
-then updates inv_items.current_qty to match the counted quantities.
+Creates an inv_counts header + inv_count_lines for each item, updates
+inv_items.current_qty (convenience UI field), and seeds
+inv_daily_ledger opening for count_date via set_opening_from_count
+(ledger = source of truth — see docs/adr/0001).
+
+Counted qty is treated as **start-of-day opening** for count_date. A later
+ledger recompute on that date keeps the count opening (does not wipe it).
 """
 
 import sys
@@ -27,6 +32,7 @@ from decimal import Decimal, InvalidOperation
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import get_session
+from src.inventory.ledger import set_opening_from_count
 from src.models import InvItem, InvCount, InvCountLine
 from sqlalchemy import text
 
@@ -67,15 +73,20 @@ def create_count_from_dict(session, counts_dict, counted_by="Owner", notes=None,
         )
         session.add(line)
 
+        # Convenience catalog field (non-authoritative).
         item.current_qty = qty
         item.updated_at = datetime.utcnow()
+
+        # Seed ledger opening for this count date (caller owns commit).
+        set_opening_from_count(item_id, count.count_date, qty, session=session)
+
         updated += 1
 
         direction = "+" if variance > 0 else ""
         print(f"  [{item.id:>3}] {item.name:<28} {float(old_qty):.1f} -> {float(qty):.1f}  ({direction}{float(variance):.1f})")
 
     session.commit()
-    print(f"\nCount #{count.id} saved: {updated} items updated")
+    print(f"\nCount #{count.id} saved: {updated} items updated (ledger openings seeded)")
     return count
 
 

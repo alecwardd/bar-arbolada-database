@@ -36,13 +36,27 @@ Consequences for this change set:
   convenience / UI field** — do not treat it as stock truth.
 - **No quantity-math change** in this pass (ledger formula unchanged).
 
-## Explicitly deferred (P1)
+## Explicitly deferred (follow-ups)
 
-- **UOM conversion** in ledger usage/purchases (audit item 10) — required
-  before trusting theoretical depletion across bottle/oz/case units.
-- **Count → ledger wiring** — revive/call `ledger.set_opening_from_count`
-  from physical-count flows so counts seed the ledger instead of only
-  updating `current_qty`.
+- Broader UOM coverage (keg, lb, dash→oz heuristics) beyond the v1 converter
+  in `src/inventory/uom.py`.
+- Dashboard catalog “Save Quantities” still only updates `current_qty` —
+  physical counts should go through `scripts/record_physical_count.py`
+  (or a future UI that creates `InvCount` rows) so openings seed the ledger.
+
+## Done (P1, 2026-07-22)
+
+- Ledger purchases/usage/adjustments convert into `InvItem.unit_of_measure`
+  via `src/inventory/uom.py` (fail closed when bottle/pack size missing, and
+  when discrete units differ except `each↔bottle`).
+- Physical counts call `set_opening_from_count`; ledger recompute prefers a
+  completed count on that date as start-of-day opening.
+
+**Ops note:** after deploy, re-run `compute_ledger_range` for recent history —
+existing ledger rows were summed in raw line units and will change once
+converted. Also: NULL `waste_factor` on recipe lines now defaults to `1.0`
+(previously excluded from the SQL product); expect slight usage increases
+where waste was NULL.
 
 ## Consequences
 
