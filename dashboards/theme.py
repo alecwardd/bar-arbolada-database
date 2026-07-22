@@ -76,8 +76,8 @@ def inject_base_css() -> None:
     """
     Inject the shared in-page CSS (KPI cards, typography, section dividers).
 
-    Call once near the top of each page, after ``st.set_page_config``. Idempotent
-    within a run. Kept in sync with the ``[theme]`` block in
+    Called once by ``dashboards/app.py`` (the ``st.navigation`` entry) so it
+    applies to every page. Kept in sync with the ``[theme]`` block in
     ``.streamlit/config.toml``.
     """
     import streamlit as st

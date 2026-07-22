@@ -38,7 +38,6 @@ from src.analytics.queries import (
 from dashboards.data import get_sales_date_range, get_full_pnl  # cached
 from dashboards.period import period_selector
 
-st.set_page_config(page_title="COGS Deep Dive | Bar Arbolada", page_icon="📉", layout="wide")
 st.title("📉 COGS Deep Dive")
 
 

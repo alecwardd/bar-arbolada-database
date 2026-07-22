@@ -25,21 +25,10 @@ from dashboards.data import (
     get_full_pnl,
     get_reorder_items,
 )
-from dashboards.theme import inject_base_css, FOREST, CORAL, SUCCESS, DANGER, INFO, MUTED
+from dashboards.theme import FOREST, CORAL, SUCCESS, DANGER, INFO, MUTED
 from dashboards.period import period_selector
 
-# ── Page Config ──────────────────────────────────────────────────────────────
-
-st.set_page_config(
-    page_title="Bar Arbolada Analytics",
-    page_icon="\U0001F333",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# ── Custom CSS ───────────────────────────────────────────────────────────────
-
-inject_base_css()
+# Page config + base CSS are set once by dashboards/app.py (st.navigation entry).
 
 # ── Header ───────────────────────────────────────────────────────────────────
 
@@ -395,21 +384,22 @@ st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 st.subheader("Dashboards")
 
+# Grouped to match the sidebar IA: Sales → Labor → Cost → Data Entry → System.
 nav_items = [
-    ("pages/1_Daily_Sales.py", "Daily Sales", "Single-day deep dive with category and hourly breakdowns", "\U0001F4CA"),
-    ("pages/2_Staffing_Rush.py", "Staffing & Rush", "Hourly heatmaps, rush prediction, SPLH analysis", "\U0001F465"),
-    ("pages/3_Comps_Leakage.py", "Comps & Leakage", "Comp and void tracking by reason and employee", "\U0001F50D"),
-    ("pages/4_Invoices.py", "Invoices", "Invoice entry, PDF parsing, vendor spend tracking", "\U0001F9FE"),
-    ("pages/5_Inventory_Items.py", "Inventory Items", "Item catalog with par levels, costs, and vendors", "\U0001F4E6"),
-    ("pages/6_Recipes.py", "Recipes", "Menu item recipes for theoretical inventory depletion", "\U0001F4D6"),
-    ("pages/7_Inventory_Dashboard.py", "Inventory", "Reorder alerts, stock levels, vendor deadlines", "\U0001F4CB"),
-    ("pages/8_Profitability.py", "Profitability", "Prime cost, pour cost, labor %, and full P&L", "\U0001F4B0"),
-    ("pages/9_Product_Mix.py", "Product Mix", "Top sellers, menu engineering matrix, category mix", "\U0001F379"),
-    ("pages/10_Operating_Expenses.py", "Operating Expenses", "Fixed costs, recurring expenses, budget tracking", "\U0001F3E2"),
-    ("pages/11_Payroll.py", "Payroll", "Tip pool calculations, wages, and employee allocations", "\U0001F4B5"),
-    ("pages/12_Import_Operations.py", "Import Operations", "Email import health, logs, and missing trading-day checks", "\U0001F4E5"),
-    ("pages/13_COGS_Deep_Dive.py", "COGS Deep Dive", "COGS trends, margins, vendor spend, shrinkage, and cost data health", "\U0001F4C9"),
-    ("pages/14_Scheduling.py", "Scheduling", "Weekly builder, roster, demand forecast, staffing advisor, templates", "\U0001F4C5"),
+    ("views/daily_sales.py", "Daily Sales", "Single-day deep dive with category and hourly breakdowns", "\U0001F4CA"),
+    ("views/product_mix.py", "Product Mix", "Top sellers, menu engineering matrix, category mix", "\U0001F379"),
+    ("views/comps_leakage.py", "Comps & Leakage", "Comp and void tracking by reason and employee", "\U0001F50D"),
+    ("views/staffing_rush.py", "Staffing & Rush", "Hourly heatmaps, rush prediction, SPLH analysis", "\U0001F465"),
+    ("views/scheduling.py", "Scheduling", "Weekly builder, roster, demand forecast, staffing advisor, templates", "\U0001F4C5"),
+    ("views/payroll.py", "Payroll", "Tip pool calculations, wages, and employee allocations", "\U0001F4B5"),
+    ("views/profitability.py", "Profitability", "Prime cost, pour cost, labor %, and full P&L", "\U0001F4B0"),
+    ("views/cogs_deep_dive.py", "COGS Deep Dive", "COGS trends, margins, vendor spend, shrinkage, and cost data health", "\U0001F4C9"),
+    ("views/inventory.py", "Inventory", "Reorder alerts, stock levels, vendor deadlines", "\U0001F4CB"),
+    ("views/invoices.py", "Invoices", "Invoice entry, PDF parsing, vendor spend tracking", "\U0001F9FE"),
+    ("views/operating_expenses.py", "Operating Expenses", "Fixed costs, recurring expenses, budget tracking", "\U0001F3E2"),
+    ("views/inventory_items.py", "Inventory Items", "Item catalog with par levels, costs, and vendors", "\U0001F4E6"),
+    ("views/recipes.py", "Recipes", "Menu item recipes for theoretical inventory depletion", "\U0001F4D6"),
+    ("views/import_operations.py", "Import Operations", "Email import health, logs, and missing trading-day checks", "\U0001F4E5"),
 ]
 
 # 4 columns per row

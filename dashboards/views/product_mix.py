@@ -27,7 +27,6 @@ from src.analytics.queries import (
 from dashboards.data import get_sales_date_range, get_full_product_mix  # cached
 from dashboards.period import period_selector
 
-st.set_page_config(page_title="Product Mix | Bar Arbolada", page_icon="🍔", layout="wide")
 st.title("🍔 Product Mix & Menu Engineering")
 
 

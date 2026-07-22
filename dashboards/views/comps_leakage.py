@@ -32,7 +32,6 @@ from src.analytics.queries import (
     get_voids_with_cost,
 )
 
-st.set_page_config(page_title="Comps & Leakage | Bar Arbolada", page_icon="🔍", layout="wide")
 st.title("🔍 Comp & Leakage Tracking")
 
 # ── Date Range ───────────────────────────────────────────────────────────────

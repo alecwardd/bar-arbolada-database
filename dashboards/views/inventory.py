@@ -28,7 +28,6 @@ from src.analytics.queries import (
     get_recipes,
 )
 
-st.set_page_config(page_title="Inventory | Bar Arbolada", page_icon="📊", layout="wide")
 st.title("📊 Inventory & Ordering Dashboard")
 
 
@@ -303,13 +302,16 @@ else:
                 st.subheader("Invoice Timeline")
                 invoices_all["total_amount"] = invoices_all["total_amount"].astype(float)
                 invoices_all["invoice_date"] = pd.to_datetime(invoices_all["invoice_date"])
+                # Bubble size must be non-negative; credit memos have negative
+                # totals, so size on magnitude while the y-axis keeps the sign.
+                invoices_all["amount_magnitude"] = invoices_all["total_amount"].abs()
 
                 fig2 = px.scatter(
                     invoices_all,
                     x="invoice_date",
                     y="total_amount",
                     color="vendor_name",
-                    size="total_amount",
+                    size="amount_magnitude",
                     hover_data=["invoice_number", "line_count"],
                     labels={"total_amount": "Amount ($)", "invoice_date": "Date"},
                 )

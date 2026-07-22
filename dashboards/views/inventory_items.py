@@ -26,7 +26,6 @@ from src.analytics.queries import (
     update_inv_item,
 )
 
-st.set_page_config(page_title="Inventory Items | Bar Arbolada", page_icon="📦", layout="wide")
 st.title("📦 Inventory Item Catalog")
 st.caption(
     "Manage your Tier A & B inventory items. Track stock on hand, pour economics, "

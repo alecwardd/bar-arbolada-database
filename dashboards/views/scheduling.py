@@ -43,11 +43,6 @@ from src.analytics.demand_forecast import (
     get_event_multipliers_historical,
 )
 
-st.set_page_config(
-    page_title="Scheduling | Bar Arbolada",
-    page_icon="📅",
-    layout="wide",
-)
 st.title("📅 Scheduling Suite")
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────

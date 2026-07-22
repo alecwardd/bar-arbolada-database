@@ -35,7 +35,6 @@ from src.analytics.queries import (
     end_recurring_expense,
 )
 
-st.set_page_config(page_title="Operating Expenses | Bar Arbolada", page_icon="🏢", layout="wide")
 st.title("🏢 Operating Expenses")
 
 EXPENSE_TYPE_LABELS = {

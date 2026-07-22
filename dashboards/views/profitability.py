@@ -31,7 +31,6 @@ from src.analytics.queries import (
     get_untrusted_labor_details,
 )
 
-st.set_page_config(page_title="Profitability | Bar Arbolada", page_icon="💰", layout="wide")
 st.title("💰 Profitability & Cost Control")
 
 

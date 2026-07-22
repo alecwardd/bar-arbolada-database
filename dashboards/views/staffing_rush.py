@@ -28,7 +28,6 @@ from src.analytics.queries import (
     get_hourly_labor,
 )
 
-st.set_page_config(page_title="Staffing & Rush | Bar Arbolada", page_icon="👥", layout="wide")
 st.title("👥 Staffing & Rush Analysis")
 
 # ── Date Range ───────────────────────────────────────────────────────────────
