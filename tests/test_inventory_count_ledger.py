@@ -215,7 +215,10 @@ def test_create_count_from_dict_seeds_ledger_and_updates_current_qty(inv_session
 
     assert count.status == "completed"
     assert count.count_type == "spot"
-    assert inv_session.query(InvCountLine).count() == 1
+    line = inv_session.query(InvCountLine).one()
+    assert line.theoretical_qty == Decimal("2")
+    assert line.counted_qty == Decimal("5.5")
+    assert line.variance == Decimal("3.5")
 
     inv_session.refresh(item)
     assert item.current_qty == Decimal("5.5")
@@ -227,6 +230,16 @@ def test_create_count_from_dict_seeds_ledger_and_updates_current_qty(inv_session
     )
     assert ledger.opening_qty == Decimal("5.5")
     assert ledger.closing_qty == Decimal("5.5")
+
+
+def test_dashboard_edit_omits_current_qty_when_spot_counting():
+    """Catalog edit must not commit current_qty before create_count_from_dict."""
+    from pathlib import Path
+
+    source = Path("dashboards/views/inventory_items.py").read_text(encoding="utf-8")
+    assert "qty_changing = new_qty is not None and old_qty != new_qty" in source
+    assert "if not qty_changing:" in source
+    assert 'fields["current_qty"] = new_qty' in source
 
 
 def test_record_script_wires_set_opening_from_count():

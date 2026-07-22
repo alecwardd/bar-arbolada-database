@@ -843,8 +843,11 @@ with tab_edit:
                         if pd.notna(old_raw) and old_raw is not None
                         else None
                     )
+                    # Spot count must see the pre-edit qty for variance + be the
+                    # sole writer of current_qty when quantity actually changes.
+                    qty_changing = new_qty is not None and old_qty != new_qty
 
-                    update_inv_item(item_id, {
+                    fields = {
                         "name":           e_name.strip(),
                         "category":       e_category,
                         "subcategory":    e_subcategory,
@@ -858,16 +861,18 @@ with tab_edit:
                         "case_cost":      Decimal(str(e_case_cost)) if e_case_cost > 0 else None,
                         "menu_price":     Decimal(str(e_menu_price)) if e_menu_price > 0 else None,
                         "primary_vendor_id": vendor_id_e,
-                        "current_qty":    new_qty,
                         "par_level":      Decimal(str(e_par)) if e_par > 0 else None,
                         "reorder_point":  Decimal(str(e_reorder)) if e_reorder > 0 else None,
                         "reorder_qty":    Decimal(str(e_reorder_qty)) if e_reorder_qty > 0 else None,
                         "pos_item_id":    e_pos_id,
                         "notes":          e_notes.strip() or None,
-                    })
+                    }
+                    if not qty_changing:
+                        fields["current_qty"] = new_qty
 
-                    # Qty change → spot count so ledger openings stay in sync (ADR 0001).
-                    if new_qty is not None and old_qty != new_qty:
+                    update_inv_item(item_id, fields)
+
+                    if qty_changing:
                         count_session = get_session()
                         try:
                             create_count_from_dict(
