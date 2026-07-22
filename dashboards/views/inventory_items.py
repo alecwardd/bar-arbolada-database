@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from src.config import get_session
 from src.models import InvItem, InvVendor
+from src.inventory.counts import create_count_from_dict
 from src.analytics.queries import (
     get_inv_items,
     get_vendor_names,
@@ -29,7 +30,9 @@ from src.analytics.queries import (
 st.title("📦 Inventory Item Catalog")
 st.caption(
     "Manage your Tier A & B inventory items. Track stock on hand, pour economics, "
-    "and cost per serving against invoice prices."
+    "and cost per serving against invoice prices. "
+    "**Quick Qty Update** records a physical count and seeds the ledger "
+    "(on-hand source of truth); catalog Qty on Hand is a convenience field only."
 )
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -303,8 +306,12 @@ with tab_catalog:
             "Unit Cost", "Cost/Pour", "Menu Price", "Pour Cost %",
         ]
 
-        # Editable qty-on-hand section
+        # Editable qty-on-hand section — writes InvCount + ledger opening (ADR 0001)
         st.subheader("Quick Qty Update")
+        st.caption(
+            "Saving changed quantities creates a completed **spot count** for today "
+            "and seeds `inv_daily_ledger` openings. Unchanged rows are skipped."
+        )
         with st.expander("Update quantities on hand (click to expand)", expanded=False):
             qty_edit_df = filtered[["id", "name", "current_qty"]].copy()
             qty_edit_df["current_qty"] = qty_edit_df["current_qty"].apply(
@@ -330,21 +337,41 @@ with tab_catalog:
             if st.button("💾 Save Quantities", type="primary"):
                 session = get_session()
                 try:
-                    updated = 0
+                    counts: dict[int, Decimal] = {}
                     for _, row in edited.iterrows():
-                        item = session.query(InvItem).filter(InvItem.id == int(row["id"])).first()
-                        if item:
-                            new_qty = Decimal(str(row["Qty on Hand"]))
-                            if item.current_qty != new_qty:
-                                item.current_qty = new_qty
-                                item.updated_at = datetime.utcnow()
-                                updated += 1
-                    session.commit()
-                    if updated:
-                        st.success(f"Updated {updated} item(s).")
-                        st.rerun()
-                    else:
+                        item_id = int(row["id"])
+                        item = (
+                            session.query(InvItem)
+                            .filter(InvItem.id == item_id)
+                            .first()
+                        )
+                        if not item:
+                            continue
+                        new_qty = Decimal(str(row["Qty on Hand"]))
+                        old_qty = (
+                            item.current_qty
+                            if item.current_qty is not None
+                            else Decimal("0")
+                        )
+                        if old_qty != new_qty:
+                            counts[item_id] = new_qty
+
+                    if not counts:
                         st.info("No changes detected.")
+                    else:
+                        count = create_count_from_dict(
+                            session,
+                            counts,
+                            counted_by="Dashboard",
+                            count_type="spot",
+                            notes="Spot count from Inventory Catalog Quick Qty Update",
+                            verbose=False,
+                        )
+                        st.success(
+                            f"Recorded spot count #{count.id} for {len(counts)} "
+                            f"item(s); ledger openings seeded for today."
+                        )
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Error saving: {e}")
                 finally:
@@ -807,6 +834,16 @@ with tab_edit:
                     if e_vendor != "(none)":
                         vendor_id_e = get_vendor_id_by_name(e_vendor)
 
+                    new_qty = (
+                        Decimal(str(e_current_qty)) if e_current_qty >= 0 else None
+                    )
+                    old_raw = row["current_qty"]
+                    old_qty = (
+                        Decimal(str(old_raw))
+                        if pd.notna(old_raw) and old_raw is not None
+                        else None
+                    )
+
                     update_inv_item(item_id, {
                         "name":           e_name.strip(),
                         "category":       e_category,
@@ -821,13 +858,29 @@ with tab_edit:
                         "case_cost":      Decimal(str(e_case_cost)) if e_case_cost > 0 else None,
                         "menu_price":     Decimal(str(e_menu_price)) if e_menu_price > 0 else None,
                         "primary_vendor_id": vendor_id_e,
-                        "current_qty":    Decimal(str(e_current_qty)) if e_current_qty >= 0 else None,
+                        "current_qty":    new_qty,
                         "par_level":      Decimal(str(e_par)) if e_par > 0 else None,
                         "reorder_point":  Decimal(str(e_reorder)) if e_reorder > 0 else None,
                         "reorder_qty":    Decimal(str(e_reorder_qty)) if e_reorder_qty > 0 else None,
                         "pos_item_id":    e_pos_id,
                         "notes":          e_notes.strip() or None,
                     })
+
+                    # Qty change → spot count so ledger openings stay in sync (ADR 0001).
+                    if new_qty is not None and old_qty != new_qty:
+                        count_session = get_session()
+                        try:
+                            create_count_from_dict(
+                                count_session,
+                                {item_id: new_qty},
+                                counted_by="Dashboard",
+                                count_type="spot",
+                                notes=f"Spot count from catalog edit of item {item_id}",
+                                verbose=False,
+                            )
+                        finally:
+                            count_session.close()
+
                     st.success(f"'{e_name}' updated successfully.")
                     st.rerun()
                 except Exception as ex:
