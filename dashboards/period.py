@@ -37,6 +37,23 @@ _PERIOD_OPTIONS: dict[str, int | None] = {
 _CHOICE_KEY = "shared_period_choice"
 _START_KEY = "shared_period_start"
 _END_KEY = "shared_period_end"
+# Resolved window (always updated) — used by pages that need a day default
+# without requiring Custom Range widget keys to be set.
+_RESOLVED_END_KEY = "shared_period_resolved_end"
+
+
+def get_shared_period_end() -> date | None:
+    """Return the last resolved period end from session state, if any."""
+    try:
+        import streamlit as st
+    except ImportError:
+        return None
+    end = st.session_state.get(_RESOLVED_END_KEY)
+    return end if isinstance(end, date) else None
+
+
+def _clamp_date(d: date, min_date: date, max_date: date) -> date:
+    return min(max(d, min_date), max_date)
 
 
 @dataclass(frozen=True)
@@ -62,6 +79,8 @@ def period_selector(min_date: date, max_date: date, *, location: str = "sidebar"
 
     The selection is stored under shared session keys, so all pages using this
     control stay in sync. ``location`` is ``"sidebar"`` (default) or ``"main"``.
+    Custom-range dates stored from another page are clamped into this page's
+    ``[min_date, max_date]`` so Streamlit does not raise on out-of-bounds values.
     """
     import streamlit as st
 
@@ -80,12 +99,30 @@ def period_selector(min_date: date, max_date: date, *, location: str = "sidebar"
     )
 
     if choice == "Custom Range":
-        default_start = max(min_date, max_date - timedelta(days=DEFAULT_LOOKBACK_DAYS - 1))
+        fallback_start = max(min_date, max_date - timedelta(days=DEFAULT_LOOKBACK_DAYS - 1))
+        fallback_end = max_date
+        # Clamp any previously shared custom dates into this page's bounds
+        # before the widgets read session state (avoids StreamlitAPIException).
+        stored_start = st.session_state.get(_START_KEY)
+        stored_end = st.session_state.get(_END_KEY)
+        if isinstance(stored_start, date):
+            st.session_state[_START_KEY] = _clamp_date(stored_start, min_date, max_date)
+        if isinstance(stored_end, date):
+            st.session_state[_END_KEY] = _clamp_date(stored_end, min_date, max_date)
+
         start = container.date_input(
-            "Start", value=default_start, min_value=min_date, max_value=max_date, key=_START_KEY
+            "Start",
+            value=st.session_state.get(_START_KEY, fallback_start),
+            min_value=min_date,
+            max_value=max_date,
+            key=_START_KEY,
         )
         end = container.date_input(
-            "End", value=max_date, min_value=min_date, max_value=max_date, key=_END_KEY
+            "End",
+            value=st.session_state.get(_END_KEY, fallback_end),
+            min_value=min_date,
+            max_value=max_date,
+            key=_END_KEY,
         )
         if start > end:
             start, end = end, start
@@ -106,6 +143,14 @@ def period_selector(min_date: date, max_date: date, *, location: str = "sidebar"
     # window even when it predates available data; callers treat empty results
     # as "no comparison".
     prior_start = prior_end - timedelta(days=length - 1)
+
+    st.session_state[_RESOLVED_END_KEY] = end
+
+    if container.button("Refresh data", help="Clear cached query results and reload."):
+        from dashboards.data import clear_data_cache
+
+        clear_data_cache()
+        st.rerun()
 
     return Period(
         start=start,
