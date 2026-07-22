@@ -47,9 +47,16 @@ Consequences for this change set:
 ## Done (P1, 2026-07-22)
 
 - Ledger purchases/usage/adjustments convert into `InvItem.unit_of_measure`
-  via `src/inventory/uom.py` (fail closed when bottle/pack size missing).
+  via `src/inventory/uom.py` (fail closed when bottle/pack size missing, and
+  when discrete units differ except `each↔bottle`).
 - Physical counts call `set_opening_from_count`; ledger recompute prefers a
   completed count on that date as start-of-day opening.
+
+**Ops note:** after deploy, re-run `compute_ledger_range` for recent history —
+existing ledger rows were summed in raw line units and will change once
+converted. Also: NULL `waste_factor` on recipe lines now defaults to `1.0`
+(previously excluded from the SQL product); expect slight usage increases
+where waste was NULL.
 
 ## Consequences
 

@@ -4,7 +4,8 @@ Inventory unit-of-measure conversion.
 Ledger quantities are stored in each item's stock unit
 (``InvItem.unit_of_measure``). Recipe lines and invoice lines often use a
 different UOM (oz pours, case purchases). Convert into stock units before
-summing — never invent bottle/pack sizes when they are missing.
+summing — never invent bottle/pack sizes when they are missing, and never
+treat mismatched discrete units (e.g. slice→bottle) as 1:1.
 """
 
 from __future__ import annotations
@@ -159,18 +160,28 @@ def qty_to_stock_units(
 
     # Case ↔ discrete stock units
     if src == "case" and dst in _DISCRETE:
-        if pack_size is None or int(pack_size) <= 0:
+        try:
+            units = Decimal(str(pack_size)) if pack_size is not None else None
+        except (InvalidOperation, ValueError):
+            units = None
+        if units is None or units <= 0:
             return None
-        return amount * Decimal(int(pack_size))
+        return amount * units
 
     if src in _DISCRETE and dst == "case":
-        if pack_size is None or int(pack_size) <= 0:
+        try:
+            units = Decimal(str(pack_size)) if pack_size is not None else None
+        except (InvalidOperation, ValueError):
+            units = None
+        if units is None or units <= 0:
             return None
-        return amount / Decimal(int(pack_size))
+        return amount / units
 
-    # Discrete count units treated as 1:1 (each ≈ bottle for catalog quirks)
-    if src in _DISCRETE and dst in _DISCRETE:
+    # Discrete mismatches fail closed — except each↔bottle, a common catalog
+    # naming quirk for the same physical unit. Never treat slice/can/piece as
+    # bottles (that would silently inflate depletion).
+    if {src, dst} == {"each", "bottle"}:
         return amount
 
-    # Unsupported (dash, keg, lb, …) — fail closed
+    # Unsupported (dash, keg, lb, slice→bottle, …) — fail closed
     return None

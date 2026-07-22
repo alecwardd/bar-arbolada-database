@@ -124,8 +124,83 @@ def test_count_opening_survives_ledger_recompute(inv_session):
     assert row.closing_qty == Decimal("4.5")
 
 
+def test_count_opening_with_purchase_activity(inv_session):
+    item = _item(inv_session)
+    count_day = date(2026, 7, 22)
+
+    count = InvCount(
+        count_date=count_day, count_type="spot", counted_by="test", status="completed"
+    )
+    inv_session.add(count)
+    inv_session.flush()
+    inv_session.add(
+        InvCountLine(
+            count_id=count.id,
+            inv_item_id=item.id,
+            counted_qty=Decimal("5"),
+            unit_of_measure="bottle",
+        )
+    )
+
+    invoice = InvInvoice(invoice_date=count_day, status="verified", invoice_number="T-1")
+    inv_session.add(invoice)
+    inv_session.flush()
+    inv_session.add(
+        InvInvoiceLine(
+            invoice_id=invoice.id,
+            inv_item_id=item.id,
+            quantity=Decimal("2"),
+            unit_of_measure="bottle",
+            line_type="item",
+        )
+    )
+    inv_session.flush()
+
+    _compute_item_ledger(inv_session, item, count_day)
+    row = (
+        inv_session.query(InvDailyLedger)
+        .filter_by(inv_item_id=item.id, ledger_date=count_day)
+        .one()
+    )
+    assert row.opening_qty == Decimal("5")
+    assert row.purchases_qty == Decimal("2")
+    assert row.closing_qty == Decimal("7")
+
+
+def test_next_day_chains_from_count_closing(inv_session):
+    item = _item(inv_session)
+    count_day = date(2026, 7, 22)
+    next_day = date(2026, 7, 23)
+
+    count = InvCount(
+        count_date=count_day, count_type="full", counted_by="test", status="completed"
+    )
+    inv_session.add(count)
+    inv_session.flush()
+    inv_session.add(
+        InvCountLine(
+            count_id=count.id,
+            inv_item_id=item.id,
+            counted_qty=Decimal("8"),
+            unit_of_measure="bottle",
+        )
+    )
+    inv_session.flush()
+
+    _compute_item_ledger(inv_session, item, count_day)
+    _compute_item_ledger(inv_session, item, next_day)
+
+    nxt = (
+        inv_session.query(InvDailyLedger)
+        .filter_by(inv_item_id=item.id, ledger_date=next_day)
+        .one()
+    )
+    assert nxt.opening_qty == Decimal("8")
+
+
 def test_record_script_wires_set_opening_from_count():
     from pathlib import Path
 
     source = Path("scripts/record_physical_count.py").read_text(encoding="utf-8")
     assert "set_opening_from_count" in source
+    assert "10|" not in source

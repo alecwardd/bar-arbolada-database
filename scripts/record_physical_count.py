@@ -7,7 +7,7 @@ Usage:
 CSV format (simple two-column):
     item_id,counted_qty
     2,30.5
-    10|    123,35
+    123,35
     108,18
 
 Or run interactively:
