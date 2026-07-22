@@ -13,7 +13,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -213,16 +213,18 @@ def parse_date_str(s: str) -> Optional[date]:
     return dt.date() if dt else None
 
 
-def safe_decimal(val: Union[str, int, float, Decimal, None]) -> Optional[Decimal]:
+def safe_decimal(
+    val: str | int | float | Decimal | None,
+) -> Optional[Decimal]:
     """Safely convert a CSV/cell value to Decimal, returning None for empty/invalid.
 
     Uses Decimal(string) — never float — so money and hours keep exact scale
-    into Numeric columns.
+    into Numeric columns. Non-finite values (NaN / Infinity) are rejected.
     """
     if val is None:
         return None
     if isinstance(val, Decimal):
-        return val
+        return val if val.is_finite() else None
     if isinstance(val, bool):
         return None
     if isinstance(val, int):
@@ -231,12 +233,13 @@ def safe_decimal(val: Union[str, int, float, Decimal, None]) -> Optional[Decimal
     if not s:
         return None
     try:
-        return Decimal(s)
+        d = Decimal(s)
     except InvalidOperation:
         return None
+    return d if d.is_finite() else None
 
 
-def safe_int(val: Union[str, int, float, Decimal, None]) -> Optional[int]:
+def safe_int(val: str | int | float | Decimal | None) -> Optional[int]:
     """Safely convert string to int, returning None for empty/invalid."""
     d = safe_decimal(val)
     return int(d) if d is not None else None
