@@ -44,6 +44,11 @@ from src.analytics.demand_forecast import (
 )
 
 st.title("📅 Scheduling Suite")
+st.caption(
+    "**Forward-looking**: build shifts, forecast demand, and set SPLH staffing "
+    "targets. Historical staffing/productivity lives on **Staffing & Rush**; the "
+    "labor-cost lens lives on **Profitability**."
+)
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 
