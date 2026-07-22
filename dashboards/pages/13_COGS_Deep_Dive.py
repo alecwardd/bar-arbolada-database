@@ -37,6 +37,7 @@ from src.analytics.queries import (
     get_cost_data_health,
     get_cost_outlier_items,
 )
+from dashboards.period import period_selector
 
 st.set_page_config(page_title="COGS Deep Dive | Bar Arbolada", page_icon="📉", layout="wide")
 st.title("📉 COGS Deep Dive")
@@ -46,15 +47,9 @@ st.title("📉 COGS Deep Dive")
 
 min_date, max_date = get_sales_date_range()
 
-ytd_start = date(max_date.year, 1, 1)
-default_start = max(min_date, ytd_start)
-default_end = max_date
-
-col_d1, col_d2, _ = st.columns([1, 1, 2])
-with col_d1:
-    start = st.date_input("Start Date", value=default_start, min_value=min_date, max_value=max_date)
-with col_d2:
-    end = st.date_input("End Date", value=default_end, min_value=min_date, max_value=max_date)
+# Shared, session-scoped period selector (same default across all pages).
+_period = period_selector(min_date, max_date)
+start, end = _period.start, _period.end
 
 num_days = (end - start).days + 1
 

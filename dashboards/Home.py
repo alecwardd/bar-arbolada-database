@@ -25,6 +25,7 @@ from src.analytics.queries import (
     get_reorder_items,
 )
 from dashboards.theme import inject_base_css, FOREST, CORAL, SUCCESS, DANGER, INFO, MUTED
+from dashboards.period import period_selector
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 
@@ -53,47 +54,11 @@ except Exception as e:
     st.info("Make sure PostgreSQL is running and .env is configured correctly.")
     st.stop()
 
-# Sidebar period selector
-st.sidebar.header("Period")
-period_options = {
-    "Last 30 Days": 30,
-    "Last 60 Days": 60,
-    "Last 90 Days": 90,
-    "Year to Date": None,
-    "All Time": -1,
-    "Custom Range": 0,
-}
-selected_period = st.sidebar.radio(
-    "Select period",
-    list(period_options.keys()),
-    index=0,
-    label_visibility="collapsed",
-)
-
-if selected_period == "Custom Range":
-    start_date = st.sidebar.date_input("Start", value=min_date, min_value=min_date, max_value=max_date)
-    end_date = st.sidebar.date_input("End", value=max_date, min_value=min_date, max_value=max_date)
-elif selected_period == "All Time":
-    start_date = min_date
-    end_date = max_date
-elif selected_period == "Year to Date":
-    start_date = date(max_date.year, 1, 1)
-    if start_date < min_date:
-        start_date = min_date
-    end_date = max_date
-else:
-    days_back = period_options[selected_period]
-    end_date = max_date
-    start_date = max_date - timedelta(days=days_back - 1)
-    if start_date < min_date:
-        start_date = min_date
-
-# Compute prior period (same length, immediately before)
-period_length = (end_date - start_date).days + 1
-prior_end = start_date - timedelta(days=1)
-prior_start = prior_end - timedelta(days=period_length - 1)
-if prior_start < min_date:
-    prior_start = min_date
+# Shared, session-scoped period selector (same default across all pages)
+p = period_selector(min_date, max_date)
+start_date, end_date = p.start, p.end
+prior_start, prior_end = p.prior_start, p.prior_end
+period_length = p.length_days
 
 # Load data
 df = get_daily_sales(start_date, end_date)
