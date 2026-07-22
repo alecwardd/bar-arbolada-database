@@ -78,3 +78,53 @@ def test_row_mapper_handles_get_reorder_items_shape():
     assert row["delivery_days"] is None
     assert "$0.00" not in _format_item_line(row)
     assert "$?.??" in _format_item_line(row)
+
+
+def test_default_and_threshold_sql_share_report_columns():
+    """
+    Both load paths must expose the columns the printer needs.
+
+    Catches the regression where get_reorder_items omitted unit_cost /
+    inventory_tier / delivery_days while the threshold SQL selected them.
+    """
+    queries_src = (ROOT / "src" / "analytics" / "queries.py").read_text(encoding="utf-8")
+    report_src = (ROOT / "scripts" / "reorder_report.py").read_text(encoding="utf-8")
+
+    # Slice get_reorder_items body (between its def and the next def).
+    start = queries_src.index("def get_reorder_items")
+    end = queries_src.index("\ndef get_payroll_date_range", start)
+    reorder_fn = queries_src[start:end]
+
+    required = ("i.unit_cost", "i.inventory_tier", "v.delivery_days", "i.status = 'active'")
+    for col in required:
+        assert col in reorder_fn, f"get_reorder_items missing {col}"
+        assert col in report_src, f"threshold SQL path missing {col}"
+
+    # Normalized print-row keys both paths produce via _row_from_mapping.
+    from scripts.reorder_report import _row_from_mapping
+
+    shared = {
+        "item_name": "X",
+        "closing_qty": 1,
+        "unit_cost": 2,
+        "inventory_tier": "A",
+        "par_level": 3,
+        "vendor_name": "V",
+        "order_deadline_day": "monday",
+        "delivery_days": "wednesday",
+        "lead_time_days": 1,
+        "days_of_cover": 2,
+    }
+    assert set(_row_from_mapping(shared).keys()) == {
+        "name",
+        "category",
+        "qty",
+        "cost",
+        "tier",
+        "par",
+        "vendor_name",
+        "order_deadline_day",
+        "delivery_days",
+        "lead_time_days",
+        "days_of_cover",
+    }

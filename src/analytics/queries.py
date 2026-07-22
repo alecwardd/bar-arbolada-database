@@ -2014,6 +2014,7 @@ def get_reorder_items() -> pd.DataFrame:
         LEFT JOIN inv_vendors v ON i.primary_vendor_id = v.id
         WHERE l.reorder_alert = TRUE
           AND l.ledger_date = (SELECT MAX(ledger_date) FROM inv_daily_ledger)
+          AND i.status = 'active'
         ORDER BY l.days_of_cover ASC NULLS FIRST
     """)
 
