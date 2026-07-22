@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 import pandas as pd
 
-from src.analytics.queries import (
+from dashboards.data import (
     get_daily_sales,
     get_all_trading_days,
     get_daypart_sales,
@@ -29,20 +29,28 @@ from src.analytics.queries import (
     get_comp_daily_trend,
     get_void_daily_trend,
 )
+from dashboards.period import get_shared_period_end
 
-st.set_page_config(page_title="Daily Sales | Bar Arbolada", page_icon="📊", layout="wide")
 st.title("📊 Daily Sales Overview")
 
 # ── Date Selection ───────────────────────────────────────────────────────────
+# Single-day deep dive (not the shared range selector). Prefer the shared
+# period's end date as the default when one is already chosen elsewhere.
 
 available_days = get_all_trading_days()
 if not available_days:
     st.warning("No sales data available. Import some CSVs first.")
     st.stop()
 
+_default_idx = 0
+_shared_end = get_shared_period_end()
+if _shared_end in available_days:
+    _default_idx = available_days.index(_shared_end)
+
 selected_day = st.sidebar.selectbox(
     "Trading Day",
     available_days,
+    index=_default_idx,
     format_func=lambda d: d.strftime("%a %b %d, %Y"),
 )
 

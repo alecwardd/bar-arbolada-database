@@ -43,12 +43,12 @@ from src.analytics.demand_forecast import (
     get_event_multipliers_historical,
 )
 
-st.set_page_config(
-    page_title="Scheduling | Bar Arbolada",
-    page_icon="📅",
-    layout="wide",
-)
 st.title("📅 Scheduling Suite")
+st.caption(
+    "**Forward-looking**: build shifts, forecast demand, and set SPLH staffing "
+    "targets. Historical staffing/productivity lives on **Staffing & Rush**; the "
+    "labor-cost lens lives on **Profitability**."
+)
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 

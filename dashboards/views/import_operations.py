@@ -19,7 +19,6 @@ from src.models import ImportRunSnapshot
 from src.operations.import_status import snapshot_to_payload
 
 
-st.set_page_config(page_title="Import Operations", page_icon="📥", layout="wide")
 st.title("📥 Import Operations")
 st.caption("Daily report ingestion health, recent imports, and missing-day checks.")
 

@@ -16,9 +16,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import date, timedelta
-
-from src.analytics.queries import (
+from dashboards.data import (
     get_sales_date_range,
     get_prime_cost_data,
     get_category_profitability,
@@ -30,25 +28,21 @@ from src.analytics.queries import (
     get_untrusted_labor_rows,
     get_untrusted_labor_details,
 )
+from dashboards.period import period_selector
 
-st.set_page_config(page_title="Profitability | Bar Arbolada", page_icon="💰", layout="wide")
 st.title("💰 Profitability & Cost Control")
 
 
 # ── Date Range ────────────────────────────────────────────────────────────
 
-min_date, max_date = get_sales_date_range()
+try:
+    min_date, max_date = get_sales_date_range()
+except Exception:
+    st.warning("No data available.")
+    st.stop()
 
-# Default to YTD (year of most recent data), or full range if data spans < 1 year
-ytd_start = date(max_date.year, 1, 1)
-default_start = max(min_date, ytd_start)
-default_end = max_date
-
-col_d1, col_d2, _ = st.columns([1, 1, 2])
-with col_d1:
-    start = st.date_input("Start Date", value=default_start, min_value=min_date, max_value=max_date)
-with col_d2:
-    end = st.date_input("End Date", value=default_end, min_value=min_date, max_value=max_date)
+_period = period_selector(min_date, max_date)
+start, end = _period.start, _period.end
 
 
 # ── Load Data ─────────────────────────────────────────────────────────────
@@ -180,7 +174,7 @@ with k3:
               delta=f"{'Good' if labor_pct < 20 else 'High'}" if labor_pct > 0 else None,
               delta_color="normal" if labor_pct < 20 else "inverse")
 with k4:
-    st.metric("Avg SPLH", f"${splh:,.0f}")
+    st.metric("Avg Daily Labor", f"${avg_daily_labor:,.0f}")
 with k5:
     st.metric("Avg Daily Sales", f"${avg_daily_revenue:,.0f}")
 with k6:
@@ -196,7 +190,7 @@ st.markdown("---")
 tab_pnl, tab_prime, tab_labor, tab_pour, tab_category = st.tabs([
     "📋 Full P&L",
     "📊 Prime Cost Trend",
-    "👷 Labor Analysis",
+    "👷 Labor Cost",
     "🥃 Pour Cost",
     "📂 Category P&L",
 ])
@@ -484,7 +478,12 @@ with tab_prime:
 # ═══════════════════════════════════════════════════════════════════════════
 
 with tab_labor:
-    st.subheader("Sales Per Labor Hour Trend")
+    st.subheader("Labor % of Sales")
+    st.caption(
+        "This page owns the **cost** lens on labor. For sales-per-labor-hour "
+        "(SPLH) productivity and rush patterns, see **Staffing & Rush**; for "
+        "forward SPLH targets, see **Scheduling**."
+    )
 
     splh_df = get_splh_trend(start, end)
 
@@ -494,31 +493,7 @@ with tab_labor:
         splh_df["net_sales"] = splh_df["net_sales"].astype(float)
         splh_df["total_hours"] = splh_df["total_hours"].astype(float)
 
-        # SPLH chart
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=splh_df["trading_day"],
-            y=splh_df["splh"],
-            mode="lines+markers",
-            name="SPLH",
-            line=dict(color="#3b82f6", width=2),
-            marker=dict(size=8),
-        ))
-
-        avg_splh = splh_df["splh"].mean()
-        fig.add_hline(y=avg_splh, line_dash="dash", line_color="gray",
-                      annotation_text=f"Avg: ${avg_splh:.0f}")
-
-        fig.update_layout(
-            height=350,
-            yaxis_title="$/Labor Hour",
-            xaxis_title="Date",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Labor % chart
-        st.subheader("Labor % of Sales")
-
+        # Labor % trend — the cost signal this page is responsible for.
         fig2 = go.Figure()
         fig2.add_trace(go.Bar(
             x=splh_df["trading_day"],
@@ -530,16 +505,15 @@ with tab_labor:
         fig2.add_hline(y=20, line_dash="dash", line_color="orange",
                        annotation_text="20% target")
         fig2.update_layout(
-            height=300,
+            height=320,
             yaxis_title="Labor %",
         )
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Day-of-week analysis
-        st.subheader("Labor Efficiency by Day of Week")
+        # Day-of-week labor cost (labor % of sales), not productivity.
+        st.subheader("Labor % by Day of Week")
         splh_df["dow"] = pd.to_datetime(splh_df["trading_day"]).dt.day_name()
         dow_stats = splh_df.groupby("dow").agg(
-            avg_splh=("splh", "mean"),
             avg_labor_pct=("labor_pct", "mean"),
             avg_sales=("net_sales", "mean"),
             avg_hours=("total_hours", "mean"),
@@ -551,18 +525,19 @@ with tab_labor:
             fig3 = go.Figure()
             fig3.add_trace(go.Bar(
                 x=dow_stats.index,
-                y=dow_stats["avg_splh"],
-                marker_color="#3b82f6",
+                y=dow_stats["avg_labor_pct"],
+                marker_color=dow_stats["avg_labor_pct"].apply(
+                    lambda x: "#ef4444" if x > 25 else "#f59e0b" if x > 20 else "#22c55e"
+                ),
             ))
             fig3.update_layout(
                 height=300,
-                yaxis_title="Avg SPLH ($)",
+                yaxis_title="Avg Labor %",
             )
             st.plotly_chart(fig3, use_container_width=True)
 
             display = dow_stats.reset_index()
-            display.columns = ["Day", "Avg SPLH", "Avg Labor %", "Avg Sales", "Avg Hours"]
-            display["Avg SPLH"] = display["Avg SPLH"].apply(lambda x: f"${x:.0f}")
+            display.columns = ["Day", "Avg Labor %", "Avg Sales", "Avg Hours"]
             display["Avg Labor %"] = display["Avg Labor %"].apply(lambda x: f"{x:.1f}%")
             display["Avg Sales"] = display["Avg Sales"].apply(lambda x: f"${x:,.0f}")
             display["Avg Hours"] = display["Avg Hours"].apply(lambda x: f"{x:.1f}")

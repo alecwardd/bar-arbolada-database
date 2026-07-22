@@ -18,9 +18,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from datetime import date, timedelta
-
-from src.analytics.queries import (
+from dashboards.data import (
     get_sales_date_range,
     get_daily_sales,
     get_comp_summary_with_cost,
@@ -31,8 +29,8 @@ from src.analytics.queries import (
     get_void_daily_trend_with_cost,
     get_voids_with_cost,
 )
+from dashboards.period import period_selector
 
-st.set_page_config(page_title="Comps & Leakage | Bar Arbolada", page_icon="🔍", layout="wide")
 st.title("🔍 Comp & Leakage Tracking")
 
 # ── Date Range ───────────────────────────────────────────────────────────────
@@ -43,13 +41,8 @@ except Exception:
     st.warning("No data available.")
     st.stop()
 
-ROLLING_DAYS = 90
-default_end = max_date
-default_start = max(min_date, max_date - timedelta(days=ROLLING_DAYS - 1))
-
-st.sidebar.markdown("### Date Range")
-start = st.sidebar.date_input("Start", value=default_start, min_value=min_date, max_value=max_date)
-end = st.sidebar.date_input("End", value=default_end, min_value=min_date, max_value=max_date)
+_period = period_selector(min_date, max_date)
+start, end = _period.start, _period.end
 
 # ── View Mode Toggle ─────────────────────────────────────────────────────────
 

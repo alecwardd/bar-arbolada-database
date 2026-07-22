@@ -17,17 +17,15 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import date, timedelta
-
-from src.analytics.queries import (
+from dashboards.data import (
     get_sales_date_range,
     get_full_product_mix,
     get_top_sellers,
     get_category_mix_summary,
     get_product_mix_trend,
 )
+from dashboards.period import period_selector
 
-st.set_page_config(page_title="Product Mix | Bar Arbolada", page_icon="🍔", layout="wide")
 st.title("🍔 Product Mix & Menu Engineering")
 
 
@@ -39,14 +37,9 @@ except Exception:
     st.warning("No data available.")
     st.stop()
 
-# Default to rolling 90 days (or full range if data spans < 90 days)
-ROLLING_DAYS = 90
-default_end = max_date
-default_start = max(min_date, max_date - timedelta(days=ROLLING_DAYS - 1))
-
-st.sidebar.markdown("### Date Range")
-start = st.sidebar.date_input("Start", value=default_start, min_value=min_date, max_value=max_date)
-end = st.sidebar.date_input("End", value=default_end, min_value=min_date, max_value=max_date)
+# Shared, session-scoped period selector (same default across all pages).
+_period = period_selector(min_date, max_date)
+start, end = _period.start, _period.end
 
 
 # ── Load Data ─────────────────────────────────────────────────────────────

@@ -25,7 +25,6 @@ from src.analytics.queries import (
     get_inv_items,
 )
 
-st.set_page_config(page_title="Recipes | Bar Arbolada", page_icon="🍸", layout="wide")
 st.title("🍸 Recipe Management")
 
 st.caption(

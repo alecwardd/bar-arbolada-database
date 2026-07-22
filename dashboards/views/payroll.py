@@ -14,12 +14,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import text
 from src.config import engine
-from src.analytics.queries import (
+from dashboards.data import (
     get_payroll_date_range,
     get_payroll_settings,
     get_payroll_daily_inputs,
@@ -30,12 +30,8 @@ from src.analytics.queries import (
     get_payroll_cash_tips,
     get_payroll_employee_settings,
 )
+from dashboards.period import period_selector
 
-st.set_page_config(
-    page_title="Payroll | Bar Arbolada",
-    page_icon="💰",
-    layout="wide",
-)
 st.title("💰 Payroll")
 
 # Same styling as app.py
@@ -48,15 +44,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+try:
+    min_date, max_date = get_payroll_date_range()
+except Exception:
+    st.warning("No payroll date range available.")
+    st.stop()
+
+# Shared session period (same window as other analytics pages).
+_period = period_selector(min_date, max_date)
+start, end = _period.start, _period.end
+
 tab_employee, tab_pool, tab_cash, tab_settings = st.tabs([
     "👤 Employee View",
     "📊 Tip Pool (Daily)",
     "💵 Cash Tips Entry",
     "⚙️ Settings",
 ])
-
-min_date, max_date = get_payroll_date_range()
-default_start = max(min_date, max_date - timedelta(days=14))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -65,7 +68,10 @@ default_start = max(min_date, max_date - timedelta(days=14))
 
 with tab_employee:
     st.subheader("Employee Pay Summary")
-    st.caption("Select an employee and date range to see wages, allocated tips, and total gross across all roles.")
+    st.caption(
+        f"Wages, allocated tips, and total gross for **{_period.label}** "
+        f"({start} → {end}). Change the shared period in the sidebar."
+    )
 
     show_all = st.checkbox("Include former employees", value=False, key="emp_show_all")
     employees_df = get_payroll_employees_list(active_days=None if show_all else 90)
@@ -84,15 +90,9 @@ with tab_employee:
         emp_first = str(idx["first_name"]).strip()
         emp_last = str(idx["last_name"]).strip()
 
-        col_s, col_e, _ = st.columns([1, 1, 2])
-        with col_s:
-            start_emp = st.date_input("From", value=default_start, min_value=min_date, max_value=max_date, key="emp_start")
-        with col_e:
-            end_emp = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date, key="emp_end")
-
         # Fetch ALL shifts for this person (across all roles)
-        wages_df = get_payroll_employee_wages(start_emp, end_emp, employee_id=emp_id or None, first_name=emp_first, last_name=emp_last)
-        alloc_df = get_payroll_daily_allocations(start_emp, end_emp)
+        wages_df = get_payroll_employee_wages(start, end, employee_id=emp_id or None, first_name=emp_first, last_name=emp_last)
+        alloc_df = get_payroll_daily_allocations(start, end)
         if not alloc_df.empty:
             alloc_df = alloc_df[
                 (alloc_df["employee_id"].astype(str) == (emp_id or ""))
@@ -232,16 +232,13 @@ with tab_employee:
 
 with tab_pool:
     st.subheader("Tip Pool by Day")
-    st.caption("Per-day pool (CC tips + cash tips − kitchen tip-out) and allocation by employee.")
+    st.caption(
+        f"Per-day pool for **{_period.label}** ({start} → {end}). "
+        "Change the shared period in the sidebar."
+    )
 
-    col_ps, col_pe, _ = st.columns([1, 1, 2])
-    with col_ps:
-        start_pool = st.date_input("From", value=default_start, min_value=min_date, max_value=max_date, key="pool_start")
-    with col_pe:
-        end_pool = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date, key="pool_end")
-
-    inputs_df = get_payroll_daily_inputs(start_pool, end_pool)
-    alloc_df_pool = get_payroll_daily_allocations(start_pool, end_pool)
+    inputs_df = get_payroll_daily_inputs(start, end)
+    alloc_df_pool = get_payroll_daily_allocations(start, end)
 
     if inputs_df.empty:
         st.info("No labor days in range; no pool data.")
