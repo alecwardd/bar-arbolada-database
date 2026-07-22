@@ -24,7 +24,14 @@ import shutil
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import get_session, RAW_CSVS_DIR
-from src.importers.base import detect_report_type, file_hash, check_duplicate
+from src.importers.base import (
+    detect_report_type,
+    file_hash,
+    check_duplicate,
+    find_successful_import,
+    record_duplicate_log,
+    record_error_log,
+)
 from src.importers.master_data import (
     import_categories,
     import_items,
@@ -94,7 +101,7 @@ def _archive_file(filepath: Path, archive_dir: Path) -> Path:
 
 
 def import_file(session, filepath: Path, *, archive_dir: Path | None = None) -> bool:
-    """Import a single CSV file. Returns True if successful."""
+    """Import a single CSV file. Returns True if successful (or a benign duplicate)."""
     # Compute hash up front so we can verify import success before archiving.
     fhash = file_hash(filepath)
 
@@ -109,25 +116,77 @@ def import_file(session, filepath: Path, *, archive_dir: Path | None = None) -> 
         print(f"  [SKIP] No importer for type '{report_type}': {filepath.name}")
         return False
 
+    # Content-hash duplicate: this exact file was seen before. Record the re-send
+    # so the Import Operations page reflects reality, then skip re-importing.
+    if check_duplicate(session, fhash) is not None:
+        record_duplicate_log(session, filepath.name, report_type, fhash)
+        print(f"  [SKIP] Already imported (duplicate): {filepath.name}")
+        # Archive it out of the inbox only if a prior import actually succeeded.
+        if archive_dir is not None and find_successful_import(session, fhash):
+            dest = _archive_file(filepath, archive_dir)
+            print(f"  [ARCHIVE] Moved to: {dest}")
+        return True
+
     try:
         count = importer(session, filepath)
-        ok = count >= 0  # 0 is OK (duplicate skip)
+        ok = count >= 0  # 0 is OK (empty section)
 
-        # Archive only when we can confirm a successful prior/current import
-        # exists for this exact file content hash.
-        if ok and archive_dir is not None:
-            log = check_duplicate(session, fhash)
-            if log and log.status == "success":
-                dest = _archive_file(filepath, archive_dir)
-                print(f"  [ARCHIVE] Moved to: {dest}")
+        # Archive only when we can confirm a successful import exists for this
+        # exact file content hash.
+        if ok and archive_dir is not None and find_successful_import(session, fhash):
+            dest = _archive_file(filepath, archive_dir)
+            print(f"  [ARCHIVE] Moved to: {dest}")
 
         return ok
     except Exception as e:
         print(f"  [ERROR] Failed to import {filepath.name}: {e}")
         import traceback
         traceback.print_exc()
+        # Discard the failed data work, then persist an honest error row so the
+        # failure is visible in Import Operations instead of vanishing.
         session.rollback()
+        try:
+            record_error_log(session, filepath.name, report_type, str(e), fhash)
+        except Exception as log_err:
+            print(f"  [WARN] Could not record error log for {filepath.name}: {log_err}")
+            session.rollback()
         return False
+
+
+def _ordered_files(files: list[Path]) -> list[Path]:
+    """Order files so master data imports before transactional data."""
+    files_by_type: dict[str, list[Path]] = {}
+    for f in files:
+        rtype = detect_report_type(f)
+        files_by_type.setdefault(rtype, []).append(f)
+
+    ordered: list[Path] = []
+    for rtype in IMPORT_ORDER:
+        ordered.extend(sorted(files_by_type.pop(rtype, [])))
+    # Any unclassified files last, in stable order.
+    for rtype in sorted(files_by_type):
+        ordered.extend(sorted(files_by_type[rtype]))
+    return ordered
+
+
+def import_files(
+    session,
+    files: list[Path],
+    *,
+    archive_dir: Path | None = None,
+) -> dict[Path, bool]:
+    """
+    Import a list of CSV files (correct dependency order) using one session.
+
+    Returns a ``{path: succeeded}`` map so callers (e.g. the email importer) can
+    tell exactly which files imported and which failed.
+    """
+    results: dict[Path, bool] = {}
+    for f in _ordered_files(files):
+        rtype = detect_report_type(f)
+        print(f"\n[{rtype.upper()}] {f.name}")
+        results[f] = import_file(session, f, archive_dir=archive_dir)
+    return results
 
 
 def import_directory(directory: Path, *, archive: bool = True, archive_subdir: str = "imported"):
@@ -144,37 +203,15 @@ def import_directory(directory: Path, *, archive: bool = True, archive_subdir: s
     print(f"\nFound {len(csv_files)} CSV files in {directory}")
     print("=" * 60)
 
-    # Classify files by type
-    files_by_type = {}
-    for f in csv_files:
-        rtype = detect_report_type(f)
-        files_by_type.setdefault(rtype, []).append(f)
-
-    # Import in order
     session = get_session()
-    total_success = 0
-    total_failed = 0
     archive_dir = (directory / archive_subdir) if archive else None
 
-    for rtype in IMPORT_ORDER:
-        files = files_by_type.pop(rtype, [])
-        for f in sorted(files):
-            print(f"\n[{rtype.upper()}] {f.name}")
-            if import_file(session, f, archive_dir=archive_dir):
-                total_success += 1
-            else:
-                total_failed += 1
-
-    # Handle any remaining unclassified files
-    for rtype, files in files_by_type.items():
-        for f in files:
-            print(f"\n[{rtype.upper()}] {f.name}")
-            if import_file(session, f, archive_dir=archive_dir):
-                total_success += 1
-            else:
-                total_failed += 1
+    results = import_files(session, csv_files, archive_dir=archive_dir)
 
     session.close()
+
+    total_success = sum(1 for ok in results.values() if ok)
+    total_failed = len(results) - total_success
 
     print("\n" + "=" * 60)
     print(f"Import complete: {total_success} succeeded, {total_failed} failed")

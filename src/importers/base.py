@@ -29,8 +29,36 @@ def file_hash(filepath: str | Path) -> str:
 
 
 def check_duplicate(session: Session, fhash: str) -> Optional[ImportLog]:
-    """Check if a file has already been imported (by content hash)."""
-    return session.query(ImportLog).filter(ImportLog.file_hash == fhash).first()
+    """
+    Check if a file has already been imported (by content hash).
+
+    Only ``success``/``duplicate`` rows count as "already imported". A prior
+    ``error`` row must NOT block a retry: re-sending the identical bytes should
+    import again, matching the pre-honest-logging behaviour where a failed import
+    was rolled back and left no trace.
+    """
+    return (
+        session.query(ImportLog)
+        .filter(
+            ImportLog.file_hash == fhash,
+            ImportLog.status.in_(("success", "duplicate")),
+        )
+        .first()
+    )
+
+
+def find_successful_import(session: Session, fhash: str) -> Optional[ImportLog]:
+    """
+    Return an existing *successful* import for this content hash, if any.
+
+    ``check_duplicate`` also matches ``duplicate`` rows, so archiving and
+    "already imported cleanly" decisions must look specifically for a success.
+    """
+    return (
+        session.query(ImportLog)
+        .filter(ImportLog.file_hash == fhash, ImportLog.status == "success")
+        .first()
+    )
 
 
 def create_import_log(
@@ -52,6 +80,62 @@ def create_import_log(
     )
     session.add(log)
     session.flush()  # Get the ID without committing
+    return log
+
+
+def record_duplicate_log(
+    session: Session,
+    filename: str,
+    import_type: str,
+    file_hash_val: Optional[str] = None,
+) -> ImportLog:
+    """
+    Persist a ``status='duplicate'`` ImportLog row for a file skipped by the
+    content-hash guard.
+
+    Importers return early (before ``create_import_log``) when a file has already
+    been imported, so without this the Import Operations page never learns a
+    duplicate arrived. Committed in its own right so it survives regardless of the
+    caller's transaction state.
+    """
+    log = ImportLog(
+        filename=filename,
+        import_type=import_type,
+        file_hash=file_hash_val,
+        status="duplicate",
+        row_count=0,
+    )
+    session.add(log)
+    session.commit()
+    return log
+
+
+def record_error_log(
+    session: Session,
+    filename: str,
+    import_type: str,
+    error_message: str,
+    file_hash_val: Optional[str] = None,
+) -> ImportLog:
+    """
+    Persist a ``status='error'`` ImportLog row (with ``error_message``) for a file
+    that failed to import.
+
+    Failures were previously rolled back (discarding the ``pending`` row) or
+    returned early with only a console print, so the Import Operations page showed
+    only successes. This is committed on its own transaction; callers that hit an
+    exception should ``rollback()`` their data work first, then call this.
+    """
+    log = ImportLog(
+        filename=filename,
+        import_type=import_type,
+        file_hash=file_hash_val,
+        status="error",
+        error_message=(error_message or "")[:2000],
+        row_count=0,
+    )
+    session.add(log)
+    session.commit()
     return log
 
 

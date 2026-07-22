@@ -33,6 +33,7 @@ from src.importers.base import (
     file_hash,
     check_duplicate,
     create_import_log,
+    record_error_log,
     read_csv_lines,
     parse_date_range_from_header,
     parse_datetime_str,
@@ -59,6 +60,7 @@ def import_labor_report(session: Session, filepath: str | Path) -> int:
     lines = read_csv_lines(filepath)
     if len(lines) < 5:
         print(f"  [ERROR] File too short: {filepath.name}")
+        record_error_log(session, filepath.name, "labor", "File too short", fhash)
         return 0
 
     date_start, date_end = parse_date_range_from_header(lines[1])

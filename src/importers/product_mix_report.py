@@ -23,6 +23,7 @@ from src.importers.base import (
     file_hash,
     check_duplicate,
     create_import_log,
+    record_error_log,
     read_csv_lines,
     parse_date_range_from_header,
     safe_decimal,
@@ -83,11 +84,15 @@ def import_product_mix_report(session: Session, filepath: str | Path) -> int:
     lines = read_csv_lines(filepath)
     if len(lines) < 4:
         print(f"  [ERROR] File too short: {filepath.name}")
+        record_error_log(session, filepath.name, "product_mix", "File too short", fhash)
         return 0
 
     date_start, date_end = parse_date_range_from_header(lines[1])
     if not date_start:
         print(f"  [ERROR] Could not parse date from: {lines[1]}")
+        record_error_log(
+            session, filepath.name, "product_mix", f"Could not parse date from: {lines[1]}", fhash
+        )
         return 0
 
     if date_start != date_end and _check_daily_overlap(session, date_start, date_end):
