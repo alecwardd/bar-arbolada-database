@@ -25,8 +25,6 @@ from src.analytics.queries import (
     get_expense_categories,
     get_active_expense_categories,
     get_expenses,
-    get_expenses_by_type,
-    get_expenses_by_category,
     get_distributions,
     get_recurring_expenses,
     get_recurring_expense_stats,
@@ -34,6 +32,12 @@ from src.analytics.queries import (
     ensure_recurring_generated,
     end_recurring_expense,
 )
+from dashboards.data import (
+    get_expenses_by_type,
+    get_expenses_by_category,
+    get_sales_date_range,
+)
+from dashboards.period import period_selector
 
 st.title("🏢 Operating Expenses")
 
@@ -378,17 +382,14 @@ with tab_recurring:
 with tab_view:
     st.subheader("Expense Overview")
 
-    col_d1, col_d2, _ = st.columns([1, 1, 2])
-    with col_d1:
-        view_start = st.date_input(
-            "From", value=date.today().replace(day=1),
-            key="view_start",
-        )
-    with col_d2:
-        view_end = st.date_input(
-            "To", value=date.today(),
-            key="view_end",
-        )
+    try:
+        min_date, max_date = get_sales_date_range()
+    except Exception:
+        min_date = date.today().replace(day=1)
+        max_date = date.today()
+
+    _period = period_selector(min_date, max_date)
+    view_start, view_end = _period.start, _period.end
 
     type_df = get_expenses_by_type(view_start, view_end)
     cat_detail_df = get_expenses_by_category(view_start, view_end)

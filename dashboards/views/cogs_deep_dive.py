@@ -16,7 +16,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import date
 
-from src.analytics.queries import (
+from dashboards.data import (
+    get_sales_date_range,
+    get_full_pnl,
     get_cogs_trend,
     get_cogs_vs_purchases,
     get_cogs_by_category_trend,
@@ -35,7 +37,6 @@ from src.analytics.queries import (
     get_cost_data_health,
     get_cost_outlier_items,
 )
-from dashboards.data import get_sales_date_range, get_full_pnl  # cached
 from dashboards.period import period_selector
 
 st.title("📉 COGS Deep Dive")
@@ -43,7 +44,11 @@ st.title("📉 COGS Deep Dive")
 
 # ── Date Range ────────────────────────────────────────────────────────────
 
-min_date, max_date = get_sales_date_range()
+try:
+    min_date, max_date = get_sales_date_range()
+except Exception:
+    st.warning("No data available.")
+    st.stop()
 
 # Shared, session-scoped period selector (same default across all pages).
 _period = period_selector(min_date, max_date)

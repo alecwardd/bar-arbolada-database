@@ -107,6 +107,12 @@ def period_selector(min_date: date, max_date: date, *, location: str = "sidebar"
     # as "no comparison".
     prior_start = prior_end - timedelta(days=length - 1)
 
+    if container.button("Refresh data", help="Clear cached query results and reload."):
+        from dashboards.data import clear_data_cache
+
+        clear_data_cache()
+        st.rerun()
+
     return Period(
         start=start,
         end=end,

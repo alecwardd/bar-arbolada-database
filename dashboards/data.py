@@ -19,6 +19,7 @@ Usage: import these instead of the raw query functions, e.g.
 from __future__ import annotations
 
 from datetime import date
+from typing import Callable
 
 import streamlit as st
 
@@ -29,29 +30,92 @@ from src.analytics import queries as _q
 CACHE_TTL_SECONDS = 600
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def get_sales_date_range() -> tuple[date, date]:
-    return _q.get_sales_date_range()
+def _cached(fn: Callable) -> Callable:
+    """Wrap a query function with ``st.cache_data`` while keeping its name."""
+
+    @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+    def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+
+    wrapper.__name__ = fn.__name__
+    wrapper.__qualname__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    wrapper.__module__ = __name__
+    return wrapper
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def get_daily_sales(start: date, end: date):
-    return _q.get_daily_sales(start, end)
+# ── Date ranges / catalogs ───────────────────────────────────────────────────
 
+get_sales_date_range = _cached(_q.get_sales_date_range)
+get_all_trading_days = _cached(_q.get_all_trading_days)
+get_payroll_date_range = _cached(_q.get_payroll_date_range)
+get_reorder_items = _cached(_q.get_reorder_items)
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def get_full_pnl(start: date, end: date):
-    return _q.get_full_pnl(start, end)
+# ── Sales / labor / mix (range or day) ───────────────────────────────────────
 
+get_daily_sales = _cached(_q.get_daily_sales)
+get_daypart_sales = _cached(_q.get_daypart_sales)
+get_category_sales = _cached(_q.get_category_sales)
+get_hourly_sales = _cached(_q.get_hourly_sales)
+get_hourly_heatmap_data = _cached(_q.get_hourly_heatmap_data)
+get_hourly_trend = _cached(_q.get_hourly_trend)
+get_daily_labor = _cached(_q.get_daily_labor)
+get_hourly_labor = _cached(_q.get_hourly_labor)
+get_top_sellers = _cached(_q.get_top_sellers)
+get_full_product_mix = _cached(_q.get_full_product_mix)
+get_product_mix_trend = _cached(_q.get_product_mix_trend)
+get_category_mix_summary = _cached(_q.get_category_mix_summary)
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def get_reorder_items():
-    return _q.get_reorder_items()
+# ── Comps / voids ────────────────────────────────────────────────────────────
 
+get_comp_daily_trend = _cached(_q.get_comp_daily_trend)
+get_void_daily_trend = _cached(_q.get_void_daily_trend)
+get_comps_with_cost = _cached(_q.get_comps_with_cost)
+get_comp_summary_with_cost = _cached(_q.get_comp_summary_with_cost)
+get_comp_daily_trend_with_cost = _cached(_q.get_comp_daily_trend_with_cost)
+get_comp_by_employee_with_cost = _cached(_q.get_comp_by_employee_with_cost)
+get_voids_with_cost = _cached(_q.get_voids_with_cost)
+get_void_summary_with_cost = _cached(_q.get_void_summary_with_cost)
+get_void_daily_trend_with_cost = _cached(_q.get_void_daily_trend_with_cost)
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def get_full_product_mix(start: date, end: date):
-    return _q.get_full_product_mix(start, end)
+# ── Profitability / P&L / opex / COGS reads ──────────────────────────────────
+
+get_prime_cost_data = _cached(_q.get_prime_cost_data)
+get_category_profitability = _cached(_q.get_category_profitability)
+get_pour_cost_by_category = _cached(_q.get_pour_cost_by_category)
+get_splh_trend = _cached(_q.get_splh_trend)
+get_full_pnl = _cached(_q.get_full_pnl)
+get_expenses_by_type = _cached(_q.get_expenses_by_type)
+get_expenses_by_category = _cached(_q.get_expenses_by_category)
+get_untrusted_labor_rows = _cached(_q.get_untrusted_labor_rows)
+get_untrusted_labor_details = _cached(_q.get_untrusted_labor_details)
+get_cogs_trend = _cached(_q.get_cogs_trend)
+get_cogs_vs_purchases = _cached(_q.get_cogs_vs_purchases)
+get_cogs_by_category_trend = _cached(_q.get_cogs_by_category_trend)
+get_top_cost_items = _cached(_q.get_top_cost_items)
+get_worst_margin_items = _cached(_q.get_worst_margin_items)
+get_cost_coverage_gaps = _cached(_q.get_cost_coverage_gaps)
+get_vendor_spend_trend = _cached(_q.get_vendor_spend_trend)
+get_vendor_spend_detail = _cached(_q.get_vendor_spend_detail)
+get_invoice_totals = _cached(_q.get_invoice_totals)
+get_vendor_names = _cached(_q.get_vendor_names)
+get_shrinkage_summary = _cached(_q.get_shrinkage_summary)
+get_high_variance_items = _cached(_q.get_high_variance_items)
+get_adjustment_summary = _cached(_q.get_adjustment_summary)
+get_adjustment_trend = _cached(_q.get_adjustment_trend)
+get_cost_data_health = _cached(_q.get_cost_data_health)
+get_cost_outlier_items = _cached(_q.get_cost_outlier_items)
+
+# ── Payroll reads ────────────────────────────────────────────────────────────
+
+get_payroll_settings = _cached(_q.get_payroll_settings)
+get_payroll_daily_inputs = _cached(_q.get_payroll_daily_inputs)
+get_payroll_daily_allocations = _cached(_q.get_payroll_daily_allocations)
+get_payroll_employees_list = _cached(_q.get_payroll_employees_list)
+get_payroll_employee_roles = _cached(_q.get_payroll_employee_roles)
+get_payroll_employee_wages = _cached(_q.get_payroll_employee_wages)
+get_payroll_cash_tips = _cached(_q.get_payroll_cash_tips)
+get_payroll_employee_settings = _cached(_q.get_payroll_employee_settings)
 
 
 def clear_data_cache() -> None:

@@ -16,9 +16,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import date, timedelta
-
-from src.analytics.queries import (
+from dashboards.data import (
     get_sales_date_range,
     get_prime_cost_data,
     get_category_profitability,
@@ -30,24 +28,21 @@ from src.analytics.queries import (
     get_untrusted_labor_rows,
     get_untrusted_labor_details,
 )
+from dashboards.period import period_selector
 
 st.title("💰 Profitability & Cost Control")
 
 
 # ── Date Range ────────────────────────────────────────────────────────────
 
-min_date, max_date = get_sales_date_range()
+try:
+    min_date, max_date = get_sales_date_range()
+except Exception:
+    st.warning("No data available.")
+    st.stop()
 
-# Default to YTD (year of most recent data), or full range if data spans < 1 year
-ytd_start = date(max_date.year, 1, 1)
-default_start = max(min_date, ytd_start)
-default_end = max_date
-
-col_d1, col_d2, _ = st.columns([1, 1, 2])
-with col_d1:
-    start = st.date_input("Start Date", value=default_start, min_value=min_date, max_value=max_date)
-with col_d2:
-    end = st.date_input("End Date", value=default_end, min_value=min_date, max_value=max_date)
+_period = period_selector(min_date, max_date)
+start, end = _period.start, _period.end
 
 
 # ── Load Data ─────────────────────────────────────────────────────────────
