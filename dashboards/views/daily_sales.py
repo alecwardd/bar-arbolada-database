@@ -29,6 +29,7 @@ from dashboards.data import (
     get_comp_daily_trend,
     get_void_daily_trend,
 )
+from dashboards.period import get_shared_period_end
 
 st.title("📊 Daily Sales Overview")
 
@@ -42,7 +43,7 @@ if not available_days:
     st.stop()
 
 _default_idx = 0
-_shared_end = st.session_state.get("shared_period_end")
+_shared_end = get_shared_period_end()
 if _shared_end in available_days:
     _default_idx = available_days.index(_shared_end)
 

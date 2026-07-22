@@ -55,3 +55,35 @@ def test_data_layer_exposes_core_cached_wrappers():
         "clear_data_cache",
     ):
         assert hasattr(d, name), f"dashboards.data missing {name}"
+
+
+def test_cached_wrappers_do_not_share_a_cache_namespace():
+    """
+    Regression: wrapping every query in the same inner ``wrapper`` made
+    ``st.cache_data`` key only on args, so ``get_reorder_items()`` could return
+    the date-range tuple from ``get_sales_date_range()``.
+    """
+    from dashboards.data import _cached
+
+    def alpha(x):
+        return ("alpha", x)
+
+    def beta(x):
+        return ("beta", x)
+
+    ca = _cached(alpha)
+    cb = _cached(beta)
+
+    assert ca(1) == ("alpha", 1)
+    assert cb(1) == ("beta", 1)
+    assert ca(1) == ("alpha", 1)
+
+
+def test_clamp_date_keeps_custom_range_in_bounds():
+    from datetime import date
+
+    from dashboards.period import _clamp_date
+
+    assert _clamp_date(date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)) == date(2026, 2, 1)
+    assert _clamp_date(date(2026, 6, 1), date(2026, 2, 1), date(2026, 3, 1)) == date(2026, 3, 1)
+    assert _clamp_date(date(2026, 2, 15), date(2026, 2, 1), date(2026, 3, 1)) == date(2026, 2, 15)

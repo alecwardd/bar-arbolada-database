@@ -31,17 +31,15 @@ CACHE_TTL_SECONDS = 600
 
 
 def _cached(fn: Callable) -> Callable:
-    """Wrap a query function with ``st.cache_data`` while keeping its name."""
+    """
+    Apply ``st.cache_data`` to ``fn`` itself.
 
-    @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-    def wrapper(*args, **kwargs):
-        return fn(*args, **kwargs)
-
-    wrapper.__name__ = fn.__name__
-    wrapper.__qualname__ = fn.__name__
-    wrapper.__doc__ = fn.__doc__
-    wrapper.__module__ = __name__
-    return wrapper
+    Do NOT wrap in a shared inner ``wrapper`` and rename it — Streamlit keys
+    caches by the underlying callable identity, so every wrapper would share
+    one namespace and collide on identical arg signatures (e.g. two no-arg
+    queries, or any pair of ``(start, end)`` queries).
+    """
+    return st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)(fn)
 
 
 # ── Date ranges / catalogs ───────────────────────────────────────────────────
