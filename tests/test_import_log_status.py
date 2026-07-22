@@ -12,7 +12,6 @@ from pathlib import Path
 
 import scripts.import_all as ia
 from src.models import ImportLog
-from src.importers.payments_report import import_payments_report
 
 
 _HEADER = "Status,Tender,Tender Account,Date,Check No.,Trading Day,Payment,Tip,Total,Server"
@@ -48,12 +47,33 @@ def test_file_too_short_records_error_log(sqlite_session, tmp_path):
     f = tmp_path / "payments-report--2026-02-04-to-2026-02-04--bar.csv"
     f.write_text("Payments Report - Bar Arbolada\n02-04-2026 to 02-04-2026\nTotals\n", encoding="utf-8")
 
-    assert import_payments_report(sqlite_session, f) == 0
+    # Must go through import_file: soft errors raise, orchestrator returns False
+    # and persists the error row. Returning 0 from the importer would wrongly
+    # count as success and mark the IMAP message processed.
+    assert ia.import_file(sqlite_session, f, archive_dir=None) is False
 
     errors = sqlite_session.query(ImportLog).filter(ImportLog.status == "error").all()
     assert len(errors) == 1
     assert errors[0].import_type == "payments"
     assert "File too short" in (errors[0].error_message or "")
+
+
+def test_soft_error_does_not_count_as_import_success(sqlite_session, tmp_path):
+    """Truncated sales must not look successful to the email mark-processed guard."""
+    good = tmp_path / "payments-report--2026-02-04-to-2026-02-04--bar.csv"
+    _valid_payments_file(good)
+    bad = tmp_path / "sales-report--2026-02-04-to-2026-02-04--bar.csv"
+    bad.write_text("Sales Report\nbad\n", encoding="utf-8")
+
+    results = ia.import_files(sqlite_session, [good, bad], archive_dir=None)
+    assert results[good] is True
+    assert results[bad] is False
+
+    from scripts.import_from_email import select_processed_message_ids
+
+    fully_ok, failed_report = select_processed_message_ids({"msg": [good, bad]}, results)
+    assert fully_ok == []
+    assert failed_report["msg"] == [bad]
 
 
 def test_errored_file_can_be_retried_after_resend(sqlite_session, tmp_path, monkeypatch):

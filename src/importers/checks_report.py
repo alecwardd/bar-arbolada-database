@@ -23,7 +23,6 @@ from src.importers.base import (
     file_hash,
     check_duplicate,
     create_import_log,
-    record_error_log,
     read_csv_lines,
     parse_date_range_from_header,
     parse_datetime_str,
@@ -48,9 +47,9 @@ def import_checks_report(session: Session, filepath: str | Path) -> int:
 
     lines = read_csv_lines(filepath)
     if len(lines) < 4:
-        print(f"  [ERROR] File too short: {filepath.name}")
-        record_error_log(session, filepath.name, "checks", "File too short", fhash)
-        return 0
+        # Raise (do not return 0): import_file treats count>=0 as success, which
+        # would mark the IMAP message \\Seen and permanently drop a bad attachment.
+        raise ValueError(f"File too short: {filepath.name}")
 
     date_start, date_end = parse_date_range_from_header(lines[1])
     is_single_day = (date_start == date_end)

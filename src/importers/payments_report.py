@@ -28,7 +28,6 @@ from src.importers.base import (
     file_hash,
     check_duplicate,
     create_import_log,
-    record_error_log,
     read_csv_lines,
     parse_date_range_from_header,
     parse_datetime_str,
@@ -101,9 +100,9 @@ def import_payments_report(session: Session, filepath: str | Path) -> int:
 
     lines = read_csv_lines(filepath)
     if len(lines) < 10:
-        print(f"  [ERROR] File too short: {filepath.name}")
-        record_error_log(session, filepath.name, "payments", "File too short", fhash)
-        return 0
+        # Raise (do not return 0): import_file treats count>=0 as success, which
+        # would mark the IMAP message \\Seen and permanently drop a bad attachment.
+        raise ValueError(f"File too short: {filepath.name}")
 
     date_start, date_end = parse_date_range_from_header(lines[1])
     log = create_import_log(
@@ -166,7 +165,10 @@ def import_payments_report(session: Session, filepath: str | Path) -> int:
                 existing_keys.add(
                     _payment_key(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8])
                 )
-    except Exception:
+    except Exception as e:
+        # Fail open (same as comps/voids) so a transient query issue does not
+        # abort the import — but surface it; silent clear would re-enable doubles.
+        print(f"  [WARN] Payments dedupe window query failed; proceeding without existing keys: {e}")
         existing_keys = set()
 
     count = 0

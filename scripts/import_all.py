@@ -129,7 +129,9 @@ def import_file(session, filepath: Path, *, archive_dir: Path | None = None) -> 
 
     try:
         count = importer(session, filepath)
-        ok = count >= 0  # 0 is OK (empty section)
+        # Soft parse failures must raise (not return 0). Returning 0 means a
+        # legitimate empty/skipped import and would wrongly mark IMAP messages done.
+        ok = count >= 0
 
         # Archive only when we can confirm a successful import exists for this
         # exact file content hash.
