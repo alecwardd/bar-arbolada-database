@@ -18,55 +18,17 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import date, timedelta
 
-from src.analytics.queries import (
+# Cached wrappers (dashboards.data) instead of the raw query layer.
+from dashboards.data import (
     get_daily_sales,
     get_sales_date_range,
     get_full_pnl,
     get_reorder_items,
 )
+from dashboards.theme import FOREST, CORAL, SUCCESS, DANGER, INFO, MUTED
+from dashboards.period import period_selector
 
-# ── Page Config ──────────────────────────────────────────────────────────────
-
-st.set_page_config(
-    page_title="Bar Arbolada Analytics",
-    page_icon="\U0001F333",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# ── Custom CSS ───────────────────────────────────────────────────────────────
-
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; }
-
-    /* KPI metric cards — inherit theme colors */
-    .stMetric {
-        border-radius: 10px;
-        padding: 14px 16px;
-        border-left: 4px solid #2d6a4f;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.6rem !important;
-        font-weight: 700 !important;
-    }
-    div[data-testid="stMetricDelta"] {
-        font-size: 0.85rem !important;
-    }
-
-    /* Typography */
-    h1 { font-weight: 800; letter-spacing: -0.02em; }
-    h2 { font-weight: 700; color: #1a1a2e; margin-top: 0.5rem; }
-    h3 { font-weight: 600; color: #16213e; }
-
-    /* Section dividers */
-    .section-divider {
-        border: none;
-        border-top: 2px solid #e9ecef;
-        margin: 1.5rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Page config + base CSS are set once by dashboards/app.py (st.navigation entry).
 
 # ── Header ───────────────────────────────────────────────────────────────────
 
@@ -82,51 +44,19 @@ except Exception as e:
     st.info("Make sure PostgreSQL is running and .env is configured correctly.")
     st.stop()
 
-# Sidebar period selector
-st.sidebar.header("Period")
-period_options = {
-    "Last 30 Days": 30,
-    "Last 60 Days": 60,
-    "Last 90 Days": 90,
-    "Year to Date": None,
-    "All Time": -1,
-    "Custom Range": 0,
-}
-selected_period = st.sidebar.radio(
-    "Select period",
-    list(period_options.keys()),
-    index=0,
-    label_visibility="collapsed",
-)
+# Shared, session-scoped period selector (same default across all pages)
+p = period_selector(min_date, max_date)
+start_date, end_date = p.start, p.end
+prior_start, prior_end = p.prior_start, p.prior_end
+period_length = p.length_days
 
-if selected_period == "Custom Range":
-    start_date = st.sidebar.date_input("Start", value=min_date, min_value=min_date, max_value=max_date)
-    end_date = st.sidebar.date_input("End", value=max_date, min_value=min_date, max_value=max_date)
-elif selected_period == "All Time":
-    start_date = min_date
-    end_date = max_date
-elif selected_period == "Year to Date":
-    start_date = date(max_date.year, 1, 1)
-    if start_date < min_date:
-        start_date = min_date
-    end_date = max_date
-else:
-    days_back = period_options[selected_period]
-    end_date = max_date
-    start_date = max_date - timedelta(days=days_back - 1)
-    if start_date < min_date:
-        start_date = min_date
-
-# Compute prior period (same length, immediately before)
-period_length = (end_date - start_date).days + 1
-prior_end = start_date - timedelta(days=1)
-prior_start = prior_end - timedelta(days=period_length - 1)
-if prior_start < min_date:
-    prior_start = min_date
-
-# Load data
+# Load data. If the prior window ends before available history (e.g. All Time),
+# treat comparison as unavailable instead of querying a pre-data range.
 df = get_daily_sales(start_date, end_date)
-df_prior = get_daily_sales(prior_start, prior_end)
+if prior_end < min_date:
+    df_prior = pd.DataFrame()
+else:
+    df_prior = get_daily_sales(prior_start, prior_end)
 
 if df.empty:
     st.warning("No sales data for the selected period. Try a different date range or import data first.")
@@ -275,7 +205,7 @@ fig.add_trace(go.Bar(
     x=chart_df["trading_day"],
     y=chart_df["net_sales"],
     name="Daily Sales",
-    marker=dict(color="#2d6a4f", opacity=0.75),
+    marker=dict(color=FOREST, opacity=0.75),
     hovertemplate="<b>%{x|%a %b %d, %Y}</b><br>Net Sales: $%{y:,.0f}<extra></extra>",
 ))
 
@@ -285,7 +215,7 @@ fig.add_trace(go.Scatter(
     y=chart_df["rolling_7d"],
     name="7-Day Average",
     mode="lines",
-    line=dict(color="#e76f51", width=3, shape="spline"),
+    line=dict(color=CORAL, width=3, shape="spline"),
     hovertemplate="<b>%{x|%a %b %d}</b><br>7-Day Avg: $%{y:,.0f}<extra></extra>",
 ))
 
@@ -338,9 +268,9 @@ with col_left:
             textposition="outside",
             textfont=dict(size=11),
             connector={"line": {"width": 1}},
-            increasing={"marker": {"color": "#22c55e"}},
-            decreasing={"marker": {"color": "#ef4444"}},
-            totals={"marker": {"color": "#3b82f6"}},
+            increasing={"marker": {"color": SUCCESS}},
+            decreasing={"marker": {"color": DANGER}},
+            totals={"marker": {"color": INFO}},
         ))
         fig_pnl.update_layout(
             **CHART_LAYOUT,
@@ -425,7 +355,7 @@ with col_right:
         fig_dow.add_hline(
             y=overall_avg,
             line_dash="dash",
-            line_color="#94a3b8",
+            line_color=MUTED,
             line_width=1.5,
             annotation_text=f"Avg: ${overall_avg:,.0f}",
             annotation_position="top right",
@@ -458,21 +388,22 @@ st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 st.subheader("Dashboards")
 
+# Grouped to match the sidebar IA: Sales → Labor → Cost → Data Entry → System.
 nav_items = [
-    ("pages/1_Daily_Sales.py", "Daily Sales", "Single-day deep dive with category and hourly breakdowns", "\U0001F4CA"),
-    ("pages/2_Staffing_Rush.py", "Staffing & Rush", "Hourly heatmaps, rush prediction, SPLH analysis", "\U0001F465"),
-    ("pages/3_Comps_Leakage.py", "Comps & Leakage", "Comp and void tracking by reason and employee", "\U0001F50D"),
-    ("pages/4_Invoices.py", "Invoices", "Invoice entry, PDF parsing, vendor spend tracking", "\U0001F9FE"),
-    ("pages/5_Inventory_Items.py", "Inventory Items", "Item catalog with par levels, costs, and vendors", "\U0001F4E6"),
-    ("pages/6_Recipes.py", "Recipes", "Menu item recipes for theoretical inventory depletion", "\U0001F4D6"),
-    ("pages/7_Inventory_Dashboard.py", "Inventory", "Reorder alerts, stock levels, vendor deadlines", "\U0001F4CB"),
-    ("pages/8_Profitability.py", "Profitability", "Prime cost, pour cost, labor %, and full P&L", "\U0001F4B0"),
-    ("pages/9_Product_Mix.py", "Product Mix", "Top sellers, menu engineering matrix, category mix", "\U0001F379"),
-    ("pages/10_Operating_Expenses.py", "Operating Expenses", "Fixed costs, recurring expenses, budget tracking", "\U0001F3E2"),
-    ("pages/11_Payroll.py", "Payroll", "Tip pool calculations, wages, and employee allocations", "\U0001F4B5"),
-    ("pages/12_Import_Operations.py", "Import Operations", "Email import health, logs, and missing trading-day checks", "\U0001F4E5"),
-    ("pages/13_COGS_Deep_Dive.py", "COGS Deep Dive", "COGS trends, margins, vendor spend, shrinkage, and cost data health", "\U0001F4C9"),
-    ("pages/14_Scheduling.py", "Scheduling", "Weekly builder, roster, demand forecast, staffing advisor, templates", "\U0001F4C5"),
+    ("views/daily_sales.py", "Daily Sales", "Single-day deep dive with category and hourly breakdowns", "\U0001F4CA"),
+    ("views/product_mix.py", "Product Mix", "Top sellers, menu engineering matrix, category mix", "\U0001F379"),
+    ("views/comps_leakage.py", "Comps & Leakage", "Comp and void tracking by reason and employee", "\U0001F50D"),
+    ("views/staffing_rush.py", "Staffing & Rush", "Hourly heatmaps, rush prediction, SPLH analysis", "\U0001F465"),
+    ("views/scheduling.py", "Scheduling", "Weekly builder, roster, demand forecast, staffing advisor, templates", "\U0001F4C5"),
+    ("views/payroll.py", "Payroll", "Tip pool calculations, wages, and employee allocations", "\U0001F4B5"),
+    ("views/profitability.py", "Profitability", "Prime cost, pour cost, labor %, and full P&L", "\U0001F4B0"),
+    ("views/cogs_deep_dive.py", "COGS Deep Dive", "COGS trends, margins, vendor spend, shrinkage, and cost data health", "\U0001F4C9"),
+    ("views/inventory.py", "Inventory", "Reorder alerts, stock levels, vendor deadlines", "\U0001F4CB"),
+    ("views/invoices.py", "Invoices", "Invoice entry, PDF parsing, vendor spend tracking", "\U0001F9FE"),
+    ("views/operating_expenses.py", "Operating Expenses", "Fixed costs, recurring expenses, budget tracking", "\U0001F3E2"),
+    ("views/inventory_items.py", "Inventory Items", "Item catalog with par levels, costs, and vendors", "\U0001F4E6"),
+    ("views/recipes.py", "Recipes", "Menu item recipes for theoretical inventory depletion", "\U0001F4D6"),
+    ("views/import_operations.py", "Import Operations", "Email import health, logs, and missing trading-day checks", "\U0001F4E5"),
 ]
 
 # 4 columns per row

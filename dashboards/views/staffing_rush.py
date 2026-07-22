@@ -28,8 +28,12 @@ from src.analytics.queries import (
     get_hourly_labor,
 )
 
-st.set_page_config(page_title="Staffing & Rush | Bar Arbolada", page_icon="👥", layout="wide")
 st.title("👥 Staffing & Rush Analysis")
+st.caption(
+    "**Historical** view: when you were busy and how productive labor was "
+    "(sales per labor hour). Forward staffing plans live on **Scheduling**; the "
+    "labor-cost lens lives on **Profitability**."
+)
 
 # ── Date Range ───────────────────────────────────────────────────────────────
 

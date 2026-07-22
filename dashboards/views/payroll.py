@@ -31,11 +31,6 @@ from src.analytics.queries import (
     get_payroll_employee_settings,
 )
 
-st.set_page_config(
-    page_title="Payroll | Bar Arbolada",
-    page_icon="💰",
-    layout="wide",
-)
 st.title("💰 Payroll")
 
 # Same styling as app.py

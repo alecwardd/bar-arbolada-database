@@ -30,7 +30,6 @@ from src.analytics.queries import (
     get_invoice_totals,
 )
 
-st.set_page_config(page_title="Invoices | Bar Arbolada", page_icon="📄", layout="wide")
 st.title("📄 Invoice Entry & Management")
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────

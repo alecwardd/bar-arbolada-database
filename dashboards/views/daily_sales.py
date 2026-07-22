@@ -30,7 +30,6 @@ from src.analytics.queries import (
     get_void_daily_trend,
 )
 
-st.set_page_config(page_title="Daily Sales | Bar Arbolada", page_icon="📊", layout="wide")
 st.title("📊 Daily Sales Overview")
 
 # ── Date Selection ───────────────────────────────────────────────────────────

@@ -130,22 +130,18 @@ Windows helper:
 powershell -ExecutionPolicy Bypass -File scripts/start_dashboard.ps1
 ```
 
-All dashboard pages live under `dashboards/pages/` and appear in the Streamlit sidebar:
+Dashboard pages live under `dashboards/views/` and are wired into a grouped
+sidebar via `st.navigation` in `dashboards/app.py`:
 
-1. Daily Sales
-2. Staffing & Rush
-3. Comps & Leakage
-4. Invoices
-5. Inventory Items
-6. Recipes
-7. Inventory
-8. Profitability
-9. Product Mix
-10. Operating Expenses
-11. Payroll
-12. Import Operations
-13. COGS Deep Dive
-14. Scheduling
+- **Overview** — executive homepage
+- **Sales** — Daily Sales, Product Mix, Comps & Leakage
+- **Labor** — Staffing & Rush, Scheduling, Payroll
+- **Cost** — Profitability, COGS Deep Dive, Inventory
+- **Data Entry** — Invoices, Operating Expenses, Inventory Items, Recipes
+- **System** — Import Operations
+
+Shared dashboard modules: `theme.py` (design tokens, chart styling, base CSS),
+`period.py` (one session-scoped date-range control), `data.py` (cached queries).
 
 ## Tests
 
@@ -170,9 +166,12 @@ src/
   analytics/             Shared query layer, forecasting, and staffing logic
 
 dashboards/
-  app.py                 Streamlit entry point
-  Home.py                Executive dashboard homepage
-  pages/                 14 dashboard pages
+  app.py                 Streamlit entry point (grouped st.navigation)
+  Home.py                Executive dashboard homepage (Overview)
+  views/                 Dashboard pages, grouped Sales/Labor/Cost/Data Entry/System
+  theme.py               Shared design tokens, chart styling, base CSS
+  period.py              Shared session-scoped period control
+  data.py                Cached query wrappers
 
 scripts/
   setup_db.py            Local PostgreSQL setup and Alembic migration runner
