@@ -198,9 +198,64 @@ def test_next_day_chains_from_count_closing(inv_session):
     assert nxt.opening_qty == Decimal("8")
 
 
+def test_create_count_from_dict_seeds_ledger_and_updates_current_qty(inv_session):
+    from src.inventory.counts import create_count_from_dict
+
+    item = _item(inv_session, current_qty=Decimal("2"))
+    count_day = date(2026, 7, 22)
+
+    count = create_count_from_dict(
+        inv_session,
+        {item.id: Decimal("5.5")},
+        counted_by="Dashboard",
+        count_type="spot",
+        count_date=count_day,
+        verbose=False,
+    )
+
+    assert count.status == "completed"
+    assert count.count_type == "spot"
+    line = inv_session.query(InvCountLine).one()
+    assert line.theoretical_qty == Decimal("2")
+    assert line.counted_qty == Decimal("5.5")
+    assert line.variance == Decimal("3.5")
+
+    inv_session.refresh(item)
+    assert item.current_qty == Decimal("5.5")
+
+    ledger = (
+        inv_session.query(InvDailyLedger)
+        .filter_by(inv_item_id=item.id, ledger_date=count_day)
+        .one()
+    )
+    assert ledger.opening_qty == Decimal("5.5")
+    assert ledger.closing_qty == Decimal("5.5")
+
+
+def test_dashboard_edit_omits_current_qty_when_spot_counting():
+    """Catalog edit must not commit current_qty before create_count_from_dict."""
+    from pathlib import Path
+
+    source = Path("dashboards/views/inventory_items.py").read_text(encoding="utf-8")
+    assert "qty_changing = new_qty is not None and old_qty != new_qty" in source
+    assert "if not qty_changing:" in source
+    assert 'fields["current_qty"] = new_qty' in source
+
+
 def test_record_script_wires_set_opening_from_count():
     from pathlib import Path
 
-    source = Path("scripts/record_physical_count.py").read_text(encoding="utf-8")
-    assert "set_opening_from_count" in source
-    assert "10|" not in source
+    script = Path("scripts/record_physical_count.py").read_text(encoding="utf-8")
+    assert "create_count_from_dict" in script
+    assert "10|" not in script
+
+    counts_mod = Path("src/inventory/counts.py").read_text(encoding="utf-8")
+    assert "set_opening_from_count" in counts_mod
+
+
+def test_dashboard_save_quantities_uses_create_count_from_dict():
+    from pathlib import Path
+
+    source = Path("dashboards/views/inventory_items.py").read_text(encoding="utf-8")
+    assert "create_count_from_dict" in source
+    assert "Save Quantities" in source

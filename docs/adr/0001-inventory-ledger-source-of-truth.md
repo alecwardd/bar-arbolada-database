@@ -40,9 +40,12 @@ Consequences for this change set:
 
 - Broader UOM coverage (keg, lb, dash→oz heuristics) beyond the v1 converter
   in `src/inventory/uom.py`.
-- Dashboard catalog “Save Quantities” still only updates `current_qty` —
-  physical counts should go through `scripts/record_physical_count.py`
-  (or a future UI that creates `InvCount` rows) so openings seed the ledger.
+
+## Done (P1 follow-up, 2026-07-22)
+
+- Dashboard catalog **Save Quantities** (and catalog edit when qty changes)
+  creates a completed spot `InvCount` via `src.inventory.counts.create_count_from_dict`
+  and seeds ledger openings — same path as `scripts/record_physical_count.py`.
 
 ## Done (P1, 2026-07-22)
 
@@ -61,7 +64,8 @@ where waste was NULL.
 ## Consequences
 
 - Reorder CLI and Inventory Dashboard agree on stock source.
-- Operators editing `current_qty` in the catalog UI does not change reorder
-  alerts until counts are wired into the ledger (deferred above).
+- Operators editing `current_qty` only through catalog Save Quantities / edit
+  qty now also create spot counts and seed ledger openings; other writers of
+  `current_qty` alone still would not.
 - Future inventory work should extend the ledger path, not revive a second
   on-hand engine.

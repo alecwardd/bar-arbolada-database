@@ -26,68 +26,14 @@ import sys
 import csv
 import argparse
 from pathlib import Path
-from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import get_session
-from src.inventory.ledger import set_opening_from_count
-from src.models import InvItem, InvCount, InvCountLine
 from sqlalchemy import text
 
-
-def create_count_from_dict(session, counts_dict, counted_by="Owner", notes=None, count_type="full"):
-    """
-    counts_dict: {inv_item_id: Decimal(counted_qty), ...}
-    Returns the InvCount record.
-    """
-    count = InvCount(
-        count_date=date.today(),
-        count_type=count_type,
-        counted_by=counted_by,
-        notes=notes or f"Physical count recorded {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        status="completed",
-    )
-    session.add(count)
-    session.flush()
-
-    updated = 0
-    for item_id, qty in counts_dict.items():
-        item = session.query(InvItem).filter(InvItem.id == item_id).first()
-        if not item:
-            print(f"  WARNING: item id={item_id} not found, skipping")
-            continue
-
-        old_qty = item.current_qty or Decimal("0")
-        variance = qty - old_qty
-
-        line = InvCountLine(
-            count_id=count.id,
-            inv_item_id=item_id,
-            counted_qty=qty,
-            unit_of_measure=item.unit_of_measure,
-            theoretical_qty=old_qty,
-            variance=variance,
-            variance_pct=round((variance / old_qty * 100), 2) if old_qty else None,
-        )
-        session.add(line)
-
-        # Convenience catalog field (non-authoritative).
-        item.current_qty = qty
-        item.updated_at = datetime.utcnow()
-
-        # Seed ledger opening for this count date (caller owns commit).
-        set_opening_from_count(item_id, count.count_date, qty, session=session)
-
-        updated += 1
-
-        direction = "+" if variance > 0 else ""
-        print(f"  [{item.id:>3}] {item.name:<28} {float(old_qty):.1f} -> {float(qty):.1f}  ({direction}{float(variance):.1f})")
-
-    session.commit()
-    print(f"\nCount #{count.id} saved: {updated} items updated (ledger openings seeded)")
-    return count
+from src.config import get_session
+from src.inventory.counts import create_count_from_dict
 
 
 def load_from_csv(csv_path):
