@@ -212,7 +212,8 @@ The trust path is:
 ```text
 Private Sites access
   -> same-origin server proxy in web/
-  -> protected Cloudflare Tunnel API hostname
+  -> authenticated Cloudflare Worker relay
+  -> one Workers VPC service through Cloudflare Tunnel
   -> FastAPI on 127.0.0.1:8600
   -> dedicated PostgreSQL read-only role
 ```
@@ -221,6 +222,9 @@ The manager API exposes explicit response models for overview, daily sales,
 aggregate staffing, profitability, ledger-backed inventory health, and import
 operations. It excludes employee identity and individual pay, owner
 distributions, raw filenames and paths, hashes, and importer error details.
+The relay is limited to those explicit `GET` paths, has no database credential,
+and exposes neither PostgreSQL nor a public tunnel hostname. Workers VPC is
+currently a beta dependency and is called out in the operating runbook.
 
 The Streamlit application remains the separately authorized owner/operator
 fallback and retains all write tools. See

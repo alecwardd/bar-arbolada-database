@@ -13,6 +13,9 @@ from src.api import app as app_module
 TOKEN = "manager-readiness-token-that-is-at-least-32-characters"
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE_SCRIPT = ROOT / "scripts" / "install_manager_services.ps1"
+RELAY_SECRET_SCRIPT = (
+    ROOT / "scripts" / "provision_cloudflare_relay_secrets.ps1"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -148,3 +151,21 @@ def test_manager_service_environment_filename_is_gitignored():
         check=False,
     )
     assert result.returncode == 0
+
+
+def test_relay_secret_provisioner_keeps_values_off_command_line():
+    source = RELAY_SECRET_SCRIPT.read_text(encoding="utf-8")
+
+    assert (
+        'foreach ($secretName in @("RELAY_CLIENT_ID", '
+        '"RELAY_CLIENT_SECRET"))'
+        in source
+    )
+    assert (
+        "$secretValue | & npx --yes wrangler@latest secret put $secretName"
+        in source
+    )
+    assert "cloudflare-relay.env" in source
+    assert "/inheritance:r" in source
+    assert "Write-Output" in source
+    assert "Write-Output $secretValue" not in source

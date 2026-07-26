@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "bar-arbolada-manager-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-26",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "vpc_services": [
+    {
+      "binding": "MANAGER_API",
+      "service_id": "019fa0b3-0862-7363-9459-1bb1a692a492",
+      "remote": true
+    }
+  ]
+}

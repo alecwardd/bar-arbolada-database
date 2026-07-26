@@ -10,8 +10,8 @@ on the local Windows host.
 Authorized Sites user
   -> private Sites deployment
   -> same-origin server proxy
-  -> Cloudflare Access Service Auth
-  -> api hostname through Cloudflare Tunnel
+  -> authenticated Cloudflare Worker relay
+  -> one Workers VPC service through Cloudflare Tunnel
   -> FastAPI on 127.0.0.1:8600
   -> dedicated PostgreSQL read-only login
 ```
@@ -50,14 +50,15 @@ The API excludes:
 
 ## Local Configuration
 
-Put these values in the ignored local `.env.manager-api` for the managed
-production runner. For a manual smoke test, set the same keys in the launching
-PowerShell process:
+The managed production runner uses the ACL-restricted local file
+`%LOCALAPPDATA%\BarArbolada\manager-api.env`. For a manual smoke test, put the
+same keys in the ignored local `.env.manager-api` or set them only in the
+launching PowerShell process:
 
 ```dotenv
 MANAGER_API_TOKEN=<long random server-only token>
 MANAGER_DATABASE_URL=postgresql://bar_manager_read:<password>@localhost:5432/bar_arbolada
-MANAGER_API_ALLOWED_HOSTS=127.0.0.1,localhost,api.example.com
+MANAGER_API_ALLOWED_HOSTS=127.0.0.1,localhost,manager-api.internal
 MANAGER_API_ALLOWED_ORIGINS=
 MANAGER_API_ENABLE_DOCS=
 MANAGER_API_READINESS_TIMEOUT_SECONDS=2
@@ -84,7 +85,7 @@ credential on the command line:
 ```powershell
 powershell -ExecutionPolicy Bypass `
   -File scripts/provision_manager_db_role.ps1 `
-  -ApiHostname api.example.com
+  -ApiHostname manager-api.internal
 ```
 
 The wrapper prompts securely only for a one-time administrator URL. It
@@ -139,21 +140,26 @@ Verify:
   errors appear in responses
 - the read-only PostgreSQL login cannot execute `INSERT`, `UPDATE`, or `DELETE`
 
-## Protected Cloudflare Tunnel
+## Protected Cloudflare Tunnel And Relay
 
-Use a named, remotely managed Cloudflare Tunnel, not a quick/public tunnel and
-not router port forwarding. A published application route requires a domain
-managed by the same Cloudflare account.
+Use the named, remotely managed `bar-arbolada-managers` Cloudflare Tunnel, not
+a quick/public tunnel and not router port forwarding. The tunnel has no public
+hostname route. One Workers VPC service is bound to the tunnel and can reach
+only `127.0.0.1:8600`; PostgreSQL and the rest of the host are outside its
+routing scope.
 
-Create one exact published application route:
+`cloudflare/manager-api-relay/` is the only public edge. It accepts `GET` for
+the six manager resources plus `/health` and `/ready`, rejects every other
+path or method, validates two long relay credentials, and then fetches the
+fixed private origin `http://manager-api.internal` through the VPC binding.
+The Worker strips the relay credentials before forwarding and never receives a
+database credential.
 
-```text
-api.example.com -> http://127.0.0.1:8600
-```
-
-Keep the existing human email policy on the Streamlit hostname. The API
-hostname needs a Cloudflare Access Service Auth policy for one Sites service
-token. Store its client ID and secret only in Sites runtime secrets.
+This route avoids a custom domain and does not require the Zero Trust checkout.
+Workers VPC is still beta, so review the integration and pricing before its
+general-availability transition. If the project later moves to a managed
+custom domain, Cloudflare Access Service Auth can replace the Worker relay
+without changing the Sites request-header contract.
 
 The Sites server proxy sends:
 
@@ -161,18 +167,37 @@ The Sites server proxy sends:
 - `CF-Access-Client-Secret`
 - the API bearer token
 
-Browser JavaScript never receives any of these values. Production CORS remains
-disabled because browsers call the same-origin Sites proxy.
+The current relay reuses those header names as private server-to-server
+credentials; it is not a Cloudflare Access policy. Browser JavaScript never
+receives any of these values. Production CORS remains disabled because
+browsers call the same-origin Sites proxy.
+
+Deploy and provision the relay:
+
+```powershell
+Set-Location cloudflare\manager-api-relay
+npm test
+npx wrangler deploy
+Set-Location ..\..
+powershell -ExecutionPolicy Bypass `
+  -File scripts/provision_cloudflare_relay_secrets.ps1
+```
+
+The provisioning helper creates or reuses
+`%LOCALAPPDATA%\BarArbolada\cloudflare-relay.env`, restricts its ACL, and
+uploads `RELAY_CLIENT_ID` and `RELAY_CLIENT_SECRET` without displaying their
+values. Sites receives the matching values as `CF_ACCESS_CLIENT_ID` and
+`CF_ACCESS_CLIENT_SECRET`.
 
 ## Sites Runtime Values
 
 Set these through Sites, never in `.openai/hosting.json`:
 
 ```text
-BAR_API_BASE_URL=https://api.example.com
+BAR_API_BASE_URL=https://bar-arbolada-manager-relay.alecwardd.workers.dev
 MANAGER_API_TOKEN=<same server-only API token>
-CF_ACCESS_CLIENT_ID=<Cloudflare service token ID>
-CF_ACCESS_CLIENT_SECRET=<Cloudflare service token secret>
+CF_ACCESS_CLIENT_ID=<same value as Worker RELAY_CLIENT_ID>
+CF_ACCESS_CLIENT_SECRET=<same value as Worker RELAY_CLIENT_SECRET>
 BAR_AUDIT_HASH_KEY=<random HMAC key for pseudonymous read audit IDs>
 BAR_MANAGER_ROLES=<email=viewer,email=manager,email=owner>
 ```
@@ -212,8 +237,9 @@ Prefer backward-compatible API and schema changes:
 3. remove obsolete fields only in a later release
 
 Rollback by redeploying the prior Sites version. To revoke remote data access
-immediately, revoke the Cloudflare service token or remove the API ingress.
-Streamlit and local ingestion remain unchanged.
+immediately, rotate or remove either Worker relay secret, disable the Worker
+route, or remove the VPC service binding. Streamlit and local ingestion remain
+unchanged.
 
 ## Service Operation
 
@@ -273,7 +299,7 @@ registering or starting anything:
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/install_manager_services.ps1 `
   -Action Validate `
-  -ApiHostname api.example.com
+  -ApiHostname manager-api.internal
 ```
 
 Validation fails before making changes when either local config is missing,
@@ -291,7 +317,7 @@ register both tasks under SYSTEM at machine startup:
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/install_manager_services.ps1 `
   -Action Install `
-  -ApiHostname api.example.com `
+  -ApiHostname manager-api.internal `
   -StartupMode AtStartup `
   -StartNow
 ```
@@ -351,7 +377,7 @@ If the site reports that local analytics are unavailable:
 2. confirm PostgreSQL is running
 3. confirm FastAPI is listening only on `127.0.0.1:8600`
 4. confirm the named tunnel service is running
-5. confirm Cloudflare Access service-token validity
+5. confirm the Worker relay secrets and VPC service binding
 6. confirm Sites runtime variables are present
 7. use Streamlit only if the viewer is authorized for its write-capable surface
 

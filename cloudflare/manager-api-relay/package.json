@@ -1,0 +1,8 @@
+{
+  "name": "bar-arbolada-manager-api-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -29,6 +29,7 @@ tmp_*.py
 
 # Tooling caches
 .cursor/
+.wrangler/
 .pytest_cache/
 .benchmarks/
 nul
