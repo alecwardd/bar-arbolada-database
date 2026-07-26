@@ -51,3 +51,19 @@ test("matches the existing Streamlit forest-and-coral theme", async () => {
   assert.match(layout, /Bar Arbolada Manager Analytics/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
+
+test("manager proxy fails closed with role-aware pseudonymous auditing", async () => {
+  const route = await readFile(
+    new URL("../app/api/manager/[...path]/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /BAR_MANAGER_ROLES/);
+  assert.match(route, /BAR_AUDIT_HASH_KEY/);
+  assert.match(route, /createHmac\("sha256"/);
+  assert.match(route, /MAX_UPSTREAM_BYTES/);
+  assert.match(route, /CF_ACCESS_CLIENT_ID/);
+  assert.match(route, /CF_ACCESS_CLIENT_SECRET/);
+  assert.match(route, /manager_api_read/);
+  assert.doesNotMatch(route, /console\.(?:info|log|warn|error)\([^)]*access\.email/);
+});

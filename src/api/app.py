@@ -2,14 +2,29 @@
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from contextlib import asynccontextmanager
 import logging
 import os
 from datetime import date
+from threading import Lock
 from typing import Callable, Literal, TypeVar
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from src.config import get_session
 
 from . import services
 from .auth import require_manager_token
@@ -20,12 +35,93 @@ from .schemas import (
     InventoryHealthResponse,
     OverviewResponse,
     ProfitabilityResponse,
+    ReadinessResponse,
     StaffingRushResponse,
 )
 
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
+DEFAULT_READINESS_TIMEOUT_SECONDS = 2.0
+MIN_READINESS_TIMEOUT_SECONDS = 0.05
+MAX_READINESS_TIMEOUT_SECONDS = 5.0
+READINESS_STATEMENT_TIMEOUT_MS = 1_500
+
+
+def _readiness_timeout_seconds() -> float:
+    """Return a tightly bounded readiness deadline.
+
+    The upper bound is intentional: an operator typo must not turn readiness
+    into an unbounded database wait.
+    """
+
+    raw = os.getenv(
+        "MANAGER_API_READINESS_TIMEOUT_SECONDS",
+        str(DEFAULT_READINESS_TIMEOUT_SECONDS),
+    )
+    try:
+        configured = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_READINESS_TIMEOUT_SECONDS
+    return min(
+        MAX_READINESS_TIMEOUT_SECONDS,
+        max(MIN_READINESS_TIMEOUT_SECONDS, configured),
+    )
+
+
+def _probe_database() -> None:
+    """Perform the smallest useful read-only PostgreSQL probe.
+
+    The transaction and statement timeout are defense in depth. The production
+    launcher also sets libpq connection and session timeouts before importing
+    the application.
+    """
+
+    session = get_session()
+    try:
+        session.execute(text("SET TRANSACTION READ ONLY"))
+        session.execute(
+            text(
+                "SET LOCAL statement_timeout = "
+                f"'{READINESS_STATEMENT_TIMEOUT_MS}ms'"
+            )
+        )
+        session.execute(text("SELECT 1"))
+    finally:
+        session.rollback()
+        session.close()
+
+
+class _DatabaseReadiness:
+    """Serialize probes and return within a fixed wall-clock deadline."""
+
+    def __init__(self, probe: Callable[[], None], timeout_seconds: float):
+        self._probe = probe
+        self._timeout_seconds = timeout_seconds
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="manager-db-readiness",
+        )
+        self._lock = Lock()
+        self._future: Future[None] | None = None
+
+    def check(self) -> bool:
+        with self._lock:
+            if self._future is None or self._future.done():
+                self._future = self._executor.submit(self._probe)
+            future = self._future
+
+        try:
+            future.result(timeout=self._timeout_seconds)
+        except TimeoutError:
+            return False
+        except Exception:
+            logger.warning("Manager API database readiness probe failed")
+            return False
+        return True
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _allowed_origins() -> list[str]:
@@ -57,6 +153,18 @@ def _data_call(operation: Callable[[], T]) -> T:
 
 
 def create_app() -> FastAPI:
+    database_readiness = _DatabaseReadiness(
+        _probe_database,
+        _readiness_timeout_seconds(),
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            database_readiness.close()
+
     docs_enabled = os.getenv("MANAGER_API_ENABLE_DOCS", "").strip().lower() in {
         "1",
         "true",
@@ -69,7 +177,9 @@ def create_app() -> FastAPI:
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
+        lifespan=lifespan,
     )
+    app.state.database_readiness = database_readiness
 
     allowed_hosts = [
         host.strip()
@@ -94,7 +204,10 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def protect_manager_responses(request: Request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/api/v1/"):
+        if request.url.path.startswith("/api/v1/") or request.url.path in {
+            "/health",
+            "/ready",
+        }:
             response.headers["Cache-Control"] = "private, no-store"
             response.headers["Pragma"] = "no-cache"
             response.headers["X-Content-Type-Options"] = "nosniff"
@@ -106,6 +219,25 @@ def create_app() -> FastAPI:
         """Liveness only; does not query or disclose database state."""
 
         return HealthResponse(status="ok")
+
+    @app.get(
+        "/ready",
+        response_model=ReadinessResponse,
+        tags=["system"],
+        responses={
+            status.HTTP_503_SERVICE_UNAVAILABLE: {
+                "model": ReadinessResponse,
+                "description": "Database unavailable within the fixed deadline.",
+            }
+        },
+    )
+    def ready(response: Response) -> ReadinessResponse:
+        """Bounded database readiness with no diagnostic disclosure."""
+
+        if not database_readiness.check():
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return ReadinessResponse(status="unavailable")
+        return ReadinessResponse(status="ready")
 
     router = APIRouter(
         prefix="/api/v1",

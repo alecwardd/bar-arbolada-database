@@ -28,7 +28,8 @@ MANAGER_API_TOKEN=<local development token>
 ```
 
 Production additionally requires an HTTPS API URL, Cloudflare Access service
-credentials, and a private Sites access policy. Secrets are server-side only;
-the browser calls `/api/manager/*` on the same origin. See
+credentials, an HMAC audit key, an exact email-to-role map, and a private Sites
+access policy. Secrets are server-side only; the browser calls
+`/api/manager/*` on the same origin. See
 `../planning-documents/sites-manager-dashboard-runbook.md` for setup,
 deployment, rotation, and rollback.

@@ -8,6 +8,7 @@ response without a corresponding, reviewed schema change here.
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -257,4 +258,10 @@ class ImportOperationsResponse(StrictResponse):
 
 
 class HealthResponse(StrictResponse):
-    status: str
+    status: Literal["ok"]
+
+
+class ReadinessResponse(StrictResponse):
+    """Non-disclosing database-readiness result."""
+
+    status: Literal["ready", "unavailable"]

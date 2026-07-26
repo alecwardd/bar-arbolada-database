@@ -39,3 +39,21 @@ Deliberately excluded:
 
 The bearer token is a server secret. A Sites frontend must call this API through
 a server-side function/proxy and must not embed the token in browser JavaScript.
+
+## Least-privilege database contract
+
+`src.api.read_model` is the manager API's only analytics data source. It does
+not import the broader Streamlit query module. Its fixed SQL selects only
+manager DTO inputs; trusted labor is aggregated in SQL from the non-identity
+columns `trading_day`, `reg_hours`, `ot_hours`, and `total_pay`.
+
+The exact table/column privilege manifest is machine-readable:
+
+```powershell
+python -m src.api.read_model
+```
+
+`export_privilege_allowlist()` returns the same JSON-compatible manifest and
+`render_column_grants("bar_arbolada_manager_read")` renders PostgreSQL
+column-level grants for a dedicated role. The role must be created with no
+inheritance from broader application roles and without whole-table privileges.

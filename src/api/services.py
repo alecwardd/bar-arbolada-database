@@ -11,11 +11,8 @@ from decimal import Decimal
 from typing import Any, Literal
 
 import pandas as pd
-from sqlalchemy.exc import SQLAlchemyError
 
-from src.analytics import queries
-from src.config import get_session
-from src.models import ImportLog, ImportRunSnapshot
+from . import read_model as queries
 
 from .schemas import (
     AvailableRange,
@@ -123,7 +120,9 @@ def build_overview(bounds: PeriodBounds) -> OverviewResponse:
     net_sales = sum(row.net_sales for row in daily)
     total_checks = sum(row.total_checks for row in daily)
     check_values = [row.check_avg for row in daily if row.check_avg is not None]
-    alert_rows = [_reorder_alert(row) for _, row in alerts.head(MAX_OVERVIEW_ALERTS).iterrows()]
+    alert_rows = [
+        _reorder_alert(row) for _, row in alerts.head(MAX_OVERVIEW_ALERTS).iterrows()
+    ]
 
     return OverviewResponse(
         provenance=_provenance(
@@ -245,7 +244,8 @@ def build_profitability(period: Period) -> ProfitabilityResponse:
         cost = _float(row.get("total_cost"))
         categories.append(
             CategoryProfitability(
-                category_name=_text(row.get("category_name"), max_length=120) or "Uncategorized",
+                category_name=_text(row.get("category_name"), max_length=120)
+                or "Uncategorized",
                 total_qty=_float(row.get("total_qty")),
                 net_revenue=revenue,
                 total_cost=cost,
@@ -264,7 +264,8 @@ def build_profitability(period: Period) -> ProfitabilityResponse:
         covered_revenue = _float(row.get("revenue_with_cost"))
         by_category.append(
             CostHealthCategory(
-                category_name=_text(row.get("category_name"), max_length=120) or "Uncategorized",
+                category_name=_text(row.get("category_name"), max_length=120)
+                or "Uncategorized",
                 total_items=_int(row.get("total_items")),
                 items_with_cost=_int(row.get("items_with_cost")),
                 total_revenue=total_revenue,
@@ -331,7 +332,9 @@ def build_inventory_health(
             items_tracked=len(all_items),
             items_below_par=below_par,
             reorder_alerts=sum(1 for item in all_items if item.reorder_alert),
-            items_with_days_of_cover=sum(1 for item in all_items if item.days_of_cover is not None),
+            items_with_days_of_cover=sum(
+                1 for item in all_items if item.days_of_cover is not None
+            ),
         ),
         items=all_items[:limit],
         truncated=len(all_items) > limit,
@@ -341,44 +344,7 @@ def build_inventory_health(
 def load_import_rows(limit: int) -> tuple[Any | None, list[Any]]:
     """Load the latest run and safe-to-summarize log rows from local PostgreSQL."""
 
-    session = get_session()
-    try:
-        try:
-            snapshot = (
-                session.query(
-                    ImportRunSnapshot.source,
-                    ImportRunSnapshot.messages_fetched,
-                    ImportRunSnapshot.csv_attachments_saved,
-                    ImportRunSnapshot.lookback_days,
-                    ImportRunSnapshot.coverage_max_dates_json,
-                    ImportRunSnapshot.missing_report_days_json,
-                    ImportRunSnapshot.generated_on,
-                    ImportRunSnapshot.created_at,
-                )
-                .order_by(ImportRunSnapshot.created_at.desc(), ImportRunSnapshot.id.desc())
-                .first()
-            )
-        except SQLAlchemyError:
-            # Older local databases may not yet have the run-snapshot migration.
-            # The existing import log remains a valid, less detailed fallback.
-            session.rollback()
-            snapshot = None
-        logs = (
-            session.query(
-                ImportLog.imported_at,
-                ImportLog.import_type,
-                ImportLog.report_date_start,
-                ImportLog.report_date_end,
-                ImportLog.row_count,
-                ImportLog.status,
-            )
-            .order_by(ImportLog.imported_at.desc(), ImportLog.id.desc())
-            .limit(limit)
-            .all()
-        )
-        return snapshot, logs
-    finally:
-        session.close()
+    return queries.get_import_operations_rows(limit)
 
 
 def build_import_operations(limit: int) -> ImportOperationsResponse:
@@ -397,7 +363,9 @@ def build_import_operations(limit: int) -> ImportOperationsResponse:
             created_at=_as_datetime(snapshot.created_at),
         )
         coverage = _sanitize_coverage(_json_object(snapshot.coverage_max_dates_json))
-        missing_reports = _sanitize_missing_days(_json_object(snapshot.missing_report_days_json))
+        missing_reports = _sanitize_missing_days(
+            _json_object(snapshot.missing_report_days_json)
+        )
 
     recent_imports = [
         ImportLogSummary(
@@ -515,7 +483,9 @@ def _sanitize_missing_days(raw: dict[str, Any]) -> list[MissingReportDays]:
         label = _safe_label(key)
         if not label or not isinstance(value, list):
             continue
-        valid_dates = [parsed for item in value if (parsed := _as_date(item)) is not None]
+        valid_dates = [
+            parsed for item in value if (parsed := _as_date(item)) is not None
+        ]
         rows.append(
             MissingReportDays(
                 report_type=label,

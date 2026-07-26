@@ -50,7 +50,9 @@ The API excludes:
 
 ## Local Configuration
 
-Add these values to the ignored local `.env`:
+Put these values in the ignored local `.env.manager-api` for the managed
+production runner. For a manual smoke test, set the same keys in the launching
+PowerShell process:
 
 ```dotenv
 MANAGER_API_TOKEN=<long random server-only token>
@@ -58,6 +60,7 @@ MANAGER_DATABASE_URL=postgresql://bar_manager_read:<password>@localhost:5432/bar
 MANAGER_API_ALLOWED_HOSTS=127.0.0.1,localhost,api.example.com
 MANAGER_API_ALLOWED_ORIGINS=
 MANAGER_API_ENABLE_DOCS=
+MANAGER_API_READINESS_TIMEOUT_SECONDS=2
 ```
 
 `MANAGER_API_TOKEN` must be at least 32 characters. Never use a
@@ -75,6 +78,22 @@ Do not reuse the importer or Streamlit database credential. The startup helper
 copies `MANAGER_DATABASE_URL` into the API process as `DATABASE_URL`; other
 local jobs are unaffected.
 
+An administrator can provision and live-verify the role without putting either
+credential on the command line:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/provision_manager_db_role.ps1
+```
+
+The wrapper prompts securely for a one-time administrator URL and a new
+32-character-or-longer manager password, clears both process variables on exit,
+and grants only the exact columns declared by
+`src.api.read_model.MANAGER_READ_PRIVILEGES`. It fails if the role inherits
+another role, a required table/column is missing, the transaction is not
+read-only, or the login can read employee names, raw import filenames, or owner
+distributions. The currently optional `import_run_snapshots` grant is skipped
+when its migration has not been applied; rerun provisioning after adding it.
+
 For a temporary local-only smoke test, the startup helper accepts
 `-AllowSharedDatabaseCredential`. Never use that switch for the tunnel service.
 
@@ -91,9 +110,16 @@ Expected listeners:
 - FastAPI: `127.0.0.1:8600`
 - Streamlit fallback: `127.0.0.1:8501`
 
-`GET /health` is unauthenticated and returns only process liveness. All
-`/api/v1/**` routes require the server-only bearer token. API documentation is
-disabled unless `MANAGER_API_ENABLE_DOCS=true`.
+`GET /health` is unauthenticated and returns only process liveness. `GET
+/ready` is a separate, non-disclosing database-readiness probe: it returns only
+`{"status":"ready"}` with HTTP 200 or `{"status":"unavailable"}` with HTTP
+503. It never returns an exception, host, database name, role, SQL, or timing
+detail. The request wait is capped at five seconds even if misconfigured; the
+default is two seconds and the probe's read-only `SELECT 1` has a 1.5-second
+PostgreSQL statement timeout.
+
+All `/api/v1/**` routes require the server-only bearer token. API
+documentation is disabled unless `MANAGER_API_ENABLE_DOCS=true`.
 
 Verify:
 
@@ -101,6 +127,9 @@ Verify:
 - unsupported methods are rejected
 - a range longer than 366 days is rejected
 - responses have `Cache-Control: private, no-store`
+- `/health` can remain healthy while `/ready` reports a database outage
+- `/ready` returns within the configured bounded deadline and discloses only
+  `ready` or `unavailable`
 - no employee identity, owner distributions, filenames, paths, hashes, or
   errors appear in responses
 - the read-only PostgreSQL login cannot execute `INSERT`, `UPDATE`, or `DELETE`
@@ -143,14 +172,23 @@ BAR_API_BASE_URL=https://api.example.com
 MANAGER_API_TOKEN=<same server-only API token>
 CF_ACCESS_CLIENT_ID=<Cloudflare service token ID>
 CF_ACCESS_CLIENT_SECRET=<Cloudflare service token secret>
-BAR_MANAGER_EMAILS=<comma-separated active workspace user emails>
+BAR_AUDIT_HASH_KEY=<random HMAC key for pseudonymous read audit IDs>
+BAR_MANAGER_ROLES=<email=viewer,email=manager,email=owner>
 ```
 
-Mark all values except `BAR_API_BASE_URL` as secrets.
+Mark all values except `BAR_API_BASE_URL` as secrets. `BAR_MANAGER_EMAILS`
+remains a compatibility fallback that assigns the `manager` role, but new
+deployments should use `BAR_MANAGER_ROLES`.
 
 Use Sites custom access. Add only active users in the owning OpenAI workspace.
 Managers who are not workspace users continue through the separately protected
 Streamlit hostname until an approved external-identity path exists.
+
+The Sites proxy fails closed unless the user has an exact configured role and
+all service/audit secrets are present. Successful and failed upstream reads log
+only a request ID, HMAC-pseudonymous actor ID, role, route allowlist key, status,
+and latency. It never logs email addresses, headers, query strings, response
+data, SQL, or credentials.
 
 ## Deployment And Live Editing
 
@@ -178,13 +216,110 @@ Streamlit and local ingestion remain unchanged.
 
 ## Service Operation
 
-Run FastAPI and `cloudflared` as auto-starting Windows services with
-restart-on-failure. Keep the host awake during required access hours.
+The repository uses two narrowly scoped Windows Scheduled Tasks rather than a
+third-party service wrapper. They provide auto-start and restart-on-failure
+without placing a database URL, bearer token, tunnel token, or credential JSON
+in the task command line:
+
+- `\BarArbolada\BarArboladaManagerApi`
+- `\BarArbolada\BarArboladaManagerTunnel`
+
+The API runner hardcodes `127.0.0.1:8600`, one worker, bounded concurrency,
+libpq's two-second connection timeout, read-only transactions, and finite
+statement/lock timeouts. Uvicorn access logging is disabled so query strings
+and request headers are not written locally. The tunnel runner accepts only a
+named-tunnel YAML file with an absolute credentials-file reference, an exact
+hostname routed to `127.0.0.1:8600`, and a final `http_status:404` ingress. It
+does not accept a quick-tunnel URL or a token on its command line.
+
+### Prepare local-only service configuration
+
+Put the API process values in `.env.manager-api` at the repository root. That
+name is already covered by `.gitignore`; do not force-add it. Use the keys shown
+in **Local Configuration**, and no unrelated importer or email settings.
+
+Put the real named-tunnel configuration and credential JSON outside the
+repository:
+
+```text
+%LOCALAPPDATA%\BarArbolada\cloudflared\config.yml
+%LOCALAPPDATA%\BarArbolada\cloudflared\<tunnel-id>.json
+```
+
+The YAML `credentials-file` must be the absolute path to that JSON. Restrict
+both secret files to the service operator, Administrators, and SYSTEM before
+using system-start mode. Never replace the local files with
+`ops/cloudflared/config.example.yml`; that tracked file is a template only.
+
+Validate all paths, required values, Git-ignore status, exact API hostname,
+credentials-file presence, Cloudflare binary, and virtual environment without
+registering or starting anything:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/install_manager_services.ps1 `
+  -Action Validate
+```
+
+Validation fails before making changes when either local config is missing,
+the API token is short, CORS/docs are enabled, hosts contain a wildcard, the
+Cloudflare ingress is not fail-closed, or the API hostname is absent from
+`MANAGER_API_ALLOWED_HOSTS`.
+
+### Install, inspect, restart, and remove
+
+For an always-on production host, open an elevated PowerShell window and
+register both tasks under SYSTEM at machine startup:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/install_manager_services.ps1 `
+  -Action Install -StartupMode AtStartup -StartNow
+```
+
+If elevation is unavailable during setup, `-StartupMode AtLogOn` registers
+limited current-user tasks instead; remote analytics then require that user to
+be logged in. Both modes restart a failed process after one minute, allow start
+on battery power, and do not stop merely because power changes. Keep the host
+awake during required access hours.
+
+Inspect the exact task states, API binding, liveness HTTP status, and readiness
+HTTP status without displaying local config values:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/install_manager_services.ps1 `
+  -Action Status
+```
+
+`ApiBinding` must be `LoopbackOnly`, liveness must be 200, and readiness must
+be 200 before activating the Sites API runtime values. `ReadinessHttpStatus`
+503 with liveness 200 specifically means the API process is up but PostgreSQL
+did not pass the bounded probe.
+
+After a local config or executable change, restart only the two exact tasks:
+
+```powershell
+Stop-ScheduledTask -TaskPath "\BarArbolada\" -TaskName "BarArboladaManagerApi"
+Stop-ScheduledTask -TaskPath "\BarArbolada\" -TaskName "BarArboladaManagerTunnel"
+Start-ScheduledTask -TaskPath "\BarArbolada\" -TaskName "BarArboladaManagerApi"
+Start-ScheduledTask -TaskPath "\BarArbolada\" -TaskName "BarArboladaManagerTunnel"
+```
+
+The installer refuses to overwrite same-named tasks it did not create. If the
+second task cannot be registered, it restores both prior managed definitions.
+To remove only these managed tasks while retaining all local configuration:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/install_manager_services.ps1 `
+  -Action Uninstall
+```
 
 Monitor:
 
-- local API liveness
-- bounded database readiness
+- `GET http://127.0.0.1:8600/health` for process liveness
+- `GET http://127.0.0.1:8600/ready` for bounded database readiness
 - tunnel health
 - latest data-as-of timestamp
 - last successful import snapshot/log
