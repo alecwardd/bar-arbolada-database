@@ -718,7 +718,9 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
 }
 $resolvedProjectRoot = Get-FullExistingPath $ProjectRoot "Project root"
 if ([string]::IsNullOrWhiteSpace($EnvironmentFile)) {
-    $EnvironmentFile = Join-Path $resolvedProjectRoot ".env.manager-api"
+    $EnvironmentFile = Join-Path (
+        Join-Path $env:LOCALAPPDATA "BarArbolada"
+    ) "manager-api.env"
 }
 if ([string]::IsNullOrWhiteSpace($CloudflaredExe)) {
     $CloudflaredExe = Join-Path (

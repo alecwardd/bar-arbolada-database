@@ -34,6 +34,7 @@ DEFAULT_ROLE = "bar_manager_read"
 DEFAULT_DATABASE = "bar_arbolada"
 OPTIONAL_TABLES = frozenset({"import_run_snapshots"})
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+_HOSTNAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,100 @@ def _require_secret(name: str, *, minimum_length: int = 1) -> str:
     if len(value) < minimum_length:
         raise RuntimeError(f"{name} is required")
     return value
+
+
+def _validate_api_hostname(value: str) -> str:
+    hostname = value.strip().lower()
+    if not hostname:
+        return ""
+    if (
+        len(hostname) > 253
+        or "." not in hostname
+        or ".." in hostname
+        or not _HOSTNAME.fullmatch(hostname)
+    ):
+        raise ValueError("MANAGER_API_HOSTNAME must be one exact DNS hostname")
+    return hostname
+
+
+def _environment_output_path(raw_path: str) -> Path:
+    if not raw_path:
+        raise RuntimeError("MANAGER_ENV_OUTPUT_PATH is required")
+    output_path = Path(raw_path)
+    if not output_path.is_absolute():
+        raise RuntimeError("MANAGER_ENV_OUTPUT_PATH must be absolute")
+
+    local_appdata = os.getenv("LOCALAPPDATA", "")
+    if not local_appdata:
+        raise RuntimeError("LOCALAPPDATA is required")
+    approved_root = (Path(local_appdata) / "BarArbolada").resolve()
+    resolved_output = output_path.resolve()
+    try:
+        resolved_output.relative_to(approved_root)
+    except ValueError as exc:
+        raise RuntimeError(
+            "manager environment output must stay under LocalAppData BarArbolada"
+        ) from exc
+    return resolved_output
+
+
+def render_manager_environment(
+    admin_url: str,
+    *,
+    role: str,
+    database: str,
+    password: str,
+    api_token: str,
+    api_hostname: str = "",
+) -> str:
+    """Render the local API environment without retaining administrator access."""
+
+    if len(password) < 32:
+        raise ValueError("manager database password must be at least 32 characters")
+    if len(api_token) < 32 or any(character.isspace() for character in api_token):
+        raise ValueError("manager API token must be at least 32 non-space characters")
+    hostname = _validate_api_hostname(api_hostname)
+    manager_url = make_url(admin_url).set(
+        username=role,
+        password=password,
+        database=database,
+    )
+    rendered_url = manager_url.render_as_string(hide_password=False)
+    if "\n" in rendered_url or "\r" in rendered_url:
+        raise ValueError("manager database URL contains a newline")
+
+    allowed_hosts = ["127.0.0.1", "localhost"]
+    if hostname:
+        allowed_hosts.append(hostname)
+    return "\n".join(
+        (
+            f"MANAGER_DATABASE_URL={rendered_url}",
+            f"MANAGER_API_TOKEN={api_token}",
+            f"MANAGER_API_ALLOWED_HOSTS={','.join(allowed_hosts)}",
+            "MANAGER_API_ALLOWED_ORIGINS=",
+            "MANAGER_API_ENABLE_DOCS=",
+            "MANAGER_API_READINESS_TIMEOUT_SECONDS=2",
+            "",
+        )
+    )
+
+
+def write_manager_environment(
+    output_path: Path,
+    contents: str,
+) -> None:
+    """Atomically write the ignored, ACL-restricted-at-wrapper environment file."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_name(
+        f".{output_path.name}.{os.getpid()}.tmp"
+    )
+    try:
+        temporary_path.write_text(contents, encoding="utf-8", newline="\n")
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
 
 
 def _role_memberships(connection: Connection, role: str) -> list[str]:
@@ -290,11 +385,28 @@ def main() -> int:
         admin_url = _require_secret("MANAGER_DB_ADMIN_URL")
         role = os.getenv("MANAGER_DATABASE_ROLE", DEFAULT_ROLE)
         database = os.getenv("MANAGER_DATABASE_NAME", DEFAULT_DATABASE)
+        output_path = _environment_output_path(
+            _require_secret("MANAGER_ENV_OUTPUT_PATH")
+        )
+        api_token = _require_secret("MANAGER_API_TOKEN", minimum_length=32)
+        api_hostname = os.getenv("MANAGER_API_HOSTNAME", "")
         result = provision_manager_role(
             admin_url,
             role=role,
             database=database,
         )
+        contents = render_manager_environment(
+            admin_url,
+            role=role,
+            database=database,
+            password=_require_secret(
+                "MANAGER_DATABASE_PASSWORD",
+                minimum_length=32,
+            ),
+            api_token=api_token,
+            api_hostname=api_hostname,
+        )
+        write_manager_environment(output_path, contents)
     except Exception as exc:
         print(
             json.dumps(
@@ -308,7 +420,16 @@ def main() -> int:
         )
         return 1
 
-    print(json.dumps({"status": "ok", **result.as_dict()}, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                **result.as_dict(),
+                "environment_written": True,
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 

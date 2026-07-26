@@ -139,6 +139,10 @@ def test_service_launcher_has_fail_closed_security_controls():
 
 
 def test_manager_service_environment_filename_is_gitignored():
+    source = SERVICE_SCRIPT.read_text(encoding="utf-8")
+    assert '"BarArbolada"' in source
+    assert '"manager-api.env"' in source
+
     result = subprocess.run(
         ["git", "-C", str(ROOT), "check-ignore", "-q", "--", ".env.manager-api"],
         check=False,

@@ -1,5 +1,11 @@
 param(
-    [string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent)
+    [string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent),
+
+    [string]$OutputEnvironmentFile = (
+        Join-Path $env:LOCALAPPDATA "BarArbolada\manager-api.env"
+    ),
+
+    [string]$ApiHostname = ""
 )
 
 $pythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
@@ -19,16 +25,27 @@ function ConvertFrom-TaskSecureString {
     }
 }
 
+function New-TaskSecret {
+    param([int]$ByteCount = 48)
+
+    $bytes = New-Object byte[] $ByteCount
+    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd("=").
+        Replace("+", "-").Replace("/", "_")
+}
+
 $adminUrlSecret = Read-Host `
     "PostgreSQL administrator URL for the local bar_arbolada database" `
-    -AsSecureString
-$managerPasswordSecret = Read-Host `
-    "New password for the dedicated bar_manager_read role (32+ characters)" `
     -AsSecureString
 
 try {
     $env:MANAGER_DB_ADMIN_URL = ConvertFrom-TaskSecureString $adminUrlSecret
-    $env:MANAGER_DATABASE_PASSWORD = ConvertFrom-TaskSecureString $managerPasswordSecret
+    $env:MANAGER_DATABASE_PASSWORD = New-TaskSecret
+    $env:MANAGER_API_TOKEN = New-TaskSecret
+    $env:MANAGER_ENV_OUTPUT_PATH = [IO.Path]::GetFullPath(
+        $OutputEnvironmentFile
+    )
+    $env:MANAGER_API_HOSTNAME = $ApiHostname
 
     Push-Location $ProjectRoot
     try {
@@ -40,8 +57,30 @@ try {
     finally {
         Pop-Location
     }
+
+    $resolvedEnvironmentFile = (Resolve-Path -LiteralPath (
+        $env:MANAGER_ENV_OUTPUT_PATH
+    )).Path
+    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    & icacls.exe `
+        $resolvedEnvironmentFile `
+        /inheritance:r `
+        /grant:r `
+        "${currentIdentity}:(R,W)" `
+        "SYSTEM:(R)" `
+        "BUILTIN\Administrators:(F)" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Manager environment file ACL restriction failed."
+    }
+    Write-Output (
+        "Manager database role and local API environment are ready; " +
+        "no credentials were displayed."
+    )
 }
 finally {
     Remove-Item Env:\MANAGER_DB_ADMIN_URL -ErrorAction SilentlyContinue
     Remove-Item Env:\MANAGER_DATABASE_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:\MANAGER_API_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:\MANAGER_ENV_OUTPUT_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:\MANAGER_API_HOSTNAME -ErrorAction SilentlyContinue
 }

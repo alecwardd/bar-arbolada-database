@@ -59,3 +59,29 @@ def test_provisioning_source_never_names_sensitive_allowed_columns():
         "run_staging_dir",
     }.isdisjoint(granted_columns)
     assert "owner_distributions" not in provisioning.MANAGER_READ_PRIVILEGES
+
+
+def test_manager_environment_uses_only_dedicated_credentials():
+    contents = provisioning.render_manager_environment(
+        "postgresql://postgres:administrator-secret@localhost:5432/bar_arbolada",
+        role="bar_manager_read",
+        database="bar_arbolada",
+        password="manager-password-that-is-longer-than-32-characters",
+        api_token="manager-api-token-that-is-longer-than-32-characters",
+        api_hostname="api.example.com",
+    )
+
+    assert "postgres:administrator-secret" not in contents
+    assert "bar_manager_read:" in contents
+    assert "api.example.com" in contents
+    assert "MANAGER_API_ALLOWED_ORIGINS=\n" in contents
+
+
+def test_environment_output_must_stay_under_local_appdata(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    allowed = tmp_path / "BarArbolada" / "manager-api.env"
+    outside = tmp_path / "manager-api.env"
+
+    assert provisioning._environment_output_path(str(allowed)) == allowed.resolve()
+    with pytest.raises(RuntimeError):
+        provisioning._environment_output_path(str(outside))

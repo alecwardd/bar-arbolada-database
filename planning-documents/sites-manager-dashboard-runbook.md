@@ -78,16 +78,21 @@ Do not reuse the importer or Streamlit database credential. The startup helper
 copies `MANAGER_DATABASE_URL` into the API process as `DATABASE_URL`; other
 local jobs are unaffected.
 
-An administrator can provision and live-verify the role without putting either
+An administrator can provision and live-verify the role without putting any
 credential on the command line:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/provision_manager_db_role.ps1
+powershell -ExecutionPolicy Bypass `
+  -File scripts/provision_manager_db_role.ps1 `
+  -ApiHostname api.example.com
 ```
 
-The wrapper prompts securely for a one-time administrator URL and a new
-32-character-or-longer manager password, clears both process variables on exit,
-and grants only the exact columns declared by
+The wrapper prompts securely only for a one-time administrator URL. It
+generates the manager database password and API bearer token, writes the
+resulting API environment to
+`%LOCALAPPDATA%\BarArbolada\manager-api.env`, restricts its ACL, clears all
+process secrets on exit, and never displays them. It grants only the exact
+columns declared by
 `src.api.read_model.MANAGER_READ_PRIVILEGES`. It fails if the role inherits
 another role, a required table/column is missing, the transaction is not
 read-only, or the login can read employee names, raw import filenames, or owner
@@ -231,9 +236,16 @@ quick-tunnel URL or a token value on its command line.
 
 ### Prepare local-only service configuration
 
-Put the API process values in `.env.manager-api` at the repository root. That
-name is already covered by `.gitignore`; do not force-add it. Use the keys shown
-in **Local Configuration**, and no unrelated importer or email settings.
+Generate the API process values with `provision_manager_db_role.ps1`. The
+service runner defaults to the generated local-only file:
+
+```text
+%LOCALAPPDATA%\BarArbolada\manager-api.env
+```
+
+For a deliberate manual override, `-EnvironmentFile` may point to an ignored
+`.env.manager-api` in the repository. Never force-add it and do not include
+unrelated importer or email settings.
 
 For the preferred remotely managed tunnel, put the copied connector token in
 one ACL-restricted local file outside the repository:
@@ -243,7 +255,7 @@ one ACL-restricted local file outside the repository:
 ```
 
 The file contains only the tunnel token and a trailing newline. Restrict it and
-`.env.manager-api` to the service operator, Administrators, and SYSTEM before
+`manager-api.env` to the service operator, Administrators, and SYSTEM before
 using system-start mode. The task passes only `--token-file <path>`; the token
 does not appear in the task definition or process arguments.
 
