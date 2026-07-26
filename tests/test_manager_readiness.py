@@ -132,6 +132,9 @@ def test_service_launcher_has_fail_closed_security_controls():
     assert "http_status:404" in source
     assert "$meaningfulLines[-1]" in source
     assert "-ConfigPath $details.CredentialsPath" in source
+    assert "--token-file $cloudflaredRuntime.TokenFilePath" in source
+    assert "--token $cloudflaredRuntime" not in source
+    assert "Choose one cloudflared mode" in source
     assert "Refusing to replace or remove a same-named task" in source
 
 

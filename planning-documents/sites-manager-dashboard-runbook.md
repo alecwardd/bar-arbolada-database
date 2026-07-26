@@ -136,18 +136,14 @@ Verify:
 
 ## Protected Cloudflare Tunnel
 
-Use a named Cloudflare Tunnel, not a quick/public tunnel and not router port
-forwarding.
+Use a named, remotely managed Cloudflare Tunnel, not a quick/public tunnel and
+not router port forwarding. A published application route requires a domain
+managed by the same Cloudflare account.
 
-Add a second exact ingress hostname:
+Create one exact published application route:
 
-```yaml
-ingress:
-  - hostname: analytics.example.com
-    service: http://127.0.0.1:8501
-  - hostname: api.example.com
-    service: http://127.0.0.1:8600
-  - service: http_status:404
+```text
+api.example.com -> http://127.0.0.1:8600
 ```
 
 Keep the existing human email policy on the Streamlit hostname. The API
@@ -227,10 +223,11 @@ in the task command line:
 The API runner hardcodes `127.0.0.1:8600`, one worker, bounded concurrency,
 libpq's two-second connection timeout, read-only transactions, and finite
 statement/lock timeouts. Uvicorn access logging is disabled so query strings
-and request headers are not written locally. The tunnel runner accepts only a
-named-tunnel YAML file with an absolute credentials-file reference, an exact
-hostname routed to `127.0.0.1:8600`, and a final `http_status:404` ingress. It
-does not accept a quick-tunnel URL or a token on its command line.
+and request headers are not written locally. The tunnel runner accepts either
+a remotely managed named-tunnel token file or a locally managed YAML file with
+an absolute credentials-file reference, an exact hostname routed to
+`127.0.0.1:8600`, and a final `http_status:404` ingress. It does not accept a
+quick-tunnel URL or a token value on its command line.
 
 ### Prepare local-only service configuration
 
@@ -238,17 +235,22 @@ Put the API process values in `.env.manager-api` at the repository root. That
 name is already covered by `.gitignore`; do not force-add it. Use the keys shown
 in **Local Configuration**, and no unrelated importer or email settings.
 
-Put the real named-tunnel configuration and credential JSON outside the
-repository:
+For the preferred remotely managed tunnel, put the copied connector token in
+one ACL-restricted local file outside the repository:
 
 ```text
-%LOCALAPPDATA%\BarArbolada\cloudflared\config.yml
-%LOCALAPPDATA%\BarArbolada\cloudflared\<tunnel-id>.json
+%LOCALAPPDATA%\BarArbolada\cloudflared\tunnel-token.txt
 ```
 
-The YAML `credentials-file` must be the absolute path to that JSON. Restrict
-both secret files to the service operator, Administrators, and SYSTEM before
-using system-start mode. Never replace the local files with
+The file contains only the tunnel token and a trailing newline. Restrict it and
+`.env.manager-api` to the service operator, Administrators, and SYSTEM before
+using system-start mode. The task passes only `--token-file <path>`; the token
+does not appear in the task definition or process arguments.
+
+A locally managed tunnel remains supported as an alternative. Put its
+`config.yml` and credential JSON under the same local directory. The YAML
+`credentials-file` must be the absolute path to that JSON and its final ingress
+must be `http_status:404`. Never replace these local files with
 `ops/cloudflared/config.example.yml`; that tracked file is a template only.
 
 Validate all paths, required values, Git-ignore status, exact API hostname,
@@ -258,12 +260,14 @@ registering or starting anything:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/install_manager_services.ps1 `
-  -Action Validate
+  -Action Validate `
+  -ApiHostname api.example.com
 ```
 
 Validation fails before making changes when either local config is missing,
 the API token is short, CORS/docs are enabled, hosts contain a wildcard, the
-Cloudflare ingress is not fail-closed, or the API hostname is absent from
+local and remote-managed credential modes are both present, the local
+Cloudflare ingress is not fail-closed, or the exact API hostname is absent from
 `MANAGER_API_ALLOWED_HOSTS`.
 
 ### Install, inspect, restart, and remove
@@ -274,7 +278,10 @@ register both tasks under SYSTEM at machine startup:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/install_manager_services.ps1 `
-  -Action Install -StartupMode AtStartup -StartNow
+  -Action Install `
+  -ApiHostname api.example.com `
+  -StartupMode AtStartup `
+  -StartNow
 ```
 
 If elevation is unavailable during setup, `-StartupMode AtLogOn` registers

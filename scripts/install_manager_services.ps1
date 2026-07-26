@@ -11,6 +11,10 @@ param(
 
     [string]$CloudflaredConfig = "",
 
+    [string]$CloudflaredTokenFile = "",
+
+    [string]$ApiHostname = "",
+
     [ValidateSet("AtLogOn", "AtStartup")]
     [string]$StartupMode = "AtLogOn",
 
@@ -344,6 +348,113 @@ function Assert-CloudflaredConfiguration {
     return $details.ApiHostname
 }
 
+function Assert-CloudflaredTokenFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ResolvedProjectRoot,
+
+        [switch]$RequireGitIgnored,
+
+        [switch]$SkipLocationPolicy
+    )
+
+    $resolvedPath = Get-FullExistingPath $Path "Cloudflared token file"
+    if (-not $SkipLocationPolicy) {
+        Assert-LocalOnlyConfigPath `
+            -ConfigPath $resolvedPath `
+            -ResolvedProjectRoot $ResolvedProjectRoot `
+            -RequireGitIgnored:$RequireGitIgnored
+    }
+
+    $token = (Get-Content -LiteralPath $resolvedPath -Raw).Trim()
+    if ($token.Length -lt 100 -or
+        $token.Length -gt 4096 -or
+        $token -notmatch "^[A-Za-z0-9_-]+$") {
+        throw "Cloudflared token file does not contain one valid tunnel token."
+    }
+    return $resolvedPath
+}
+
+function Assert-ApiHostname {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DnsName
+    )
+
+    $normalized = $DnsName.Trim().ToLowerInvariant()
+    if ($normalized.Length -gt 253 -or
+        $normalized -notmatch "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$" -or
+        $normalized -notmatch "\." -or
+        $normalized.Contains("..")) {
+        throw "ApiHostname must be one exact DNS hostname."
+    }
+    return $normalized
+}
+
+function Resolve-CloudflaredRuntime {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TokenFilePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ResolvedProjectRoot,
+
+        [string]$ConfiguredApiHostname = "",
+
+        [switch]$RequireGitIgnored,
+
+        [switch]$SkipLocationPolicy,
+
+        [switch]$RequireApiHostname
+    )
+
+    $hasConfig = Test-Path -LiteralPath $ConfigPath -PathType Leaf
+    $hasToken = Test-Path -LiteralPath $TokenFilePath -PathType Leaf
+    if ($hasConfig -and $hasToken) {
+        throw "Choose one cloudflared mode: local config or remote-managed token."
+    }
+    if (-not $hasConfig -and -not $hasToken) {
+        throw "Cloudflared local config or token file is required."
+    }
+
+    if ($hasToken) {
+        $resolvedToken = Assert-CloudflaredTokenFile `
+            -Path $TokenFilePath `
+            -ResolvedProjectRoot $ResolvedProjectRoot `
+            -RequireGitIgnored:$RequireGitIgnored `
+            -SkipLocationPolicy:$SkipLocationPolicy
+        $hostname = ""
+        if ($RequireApiHostname) {
+            $hostname = Assert-ApiHostname $ConfiguredApiHostname
+        }
+        return [pscustomobject]@{
+            Mode = "RemoteManagedToken"
+            ApiHostname = $hostname
+            ConfigPath = ""
+            TokenFilePath = $resolvedToken
+        }
+    }
+
+    $resolvedConfig = Get-FullExistingPath $ConfigPath "Cloudflared config"
+    $hostname = Assert-CloudflaredConfiguration `
+        -Path $resolvedConfig `
+        -ResolvedProjectRoot $ResolvedProjectRoot `
+        -RequireGitIgnored:$RequireGitIgnored `
+        -SkipLocationPolicy:$SkipLocationPolicy
+    return [pscustomobject]@{
+        Mode = "LocalConfig"
+        ApiHostname = $hostname
+        ConfigPath = $resolvedConfig
+        TokenFilePath = ""
+    }
+}
+
 function Assert-CloudflaredExecutable {
     param(
         [Parameter(Mandatory = $true)]
@@ -405,8 +516,9 @@ function New-RunnerArguments {
         [Parameter(Mandatory = $true)]
         [string]$ResolvedCloudflaredExe,
 
-        [Parameter(Mandatory = $true)]
-        [string]$ResolvedCloudflaredConfig
+        [string]$ResolvedCloudflaredConfig = "",
+
+        [string]$ResolvedCloudflaredTokenFile = ""
     )
 
     $arguments = @(
@@ -427,10 +539,20 @@ function New-RunnerArguments {
     else {
         $arguments += @(
             "-CloudflaredExe",
-            (Quote-TaskArgument $ResolvedCloudflaredExe),
-            "-CloudflaredConfig",
-            (Quote-TaskArgument $ResolvedCloudflaredConfig)
+            (Quote-TaskArgument $ResolvedCloudflaredExe)
         )
+        if (-not [string]::IsNullOrWhiteSpace($ResolvedCloudflaredTokenFile)) {
+            $arguments += @(
+                "-CloudflaredTokenFile",
+                (Quote-TaskArgument $ResolvedCloudflaredTokenFile)
+            )
+        }
+        else {
+            $arguments += @(
+                "-CloudflaredConfig",
+                (Quote-TaskArgument $ResolvedCloudflaredConfig)
+            )
+        }
     }
     return $arguments -join " "
 }
@@ -608,6 +730,11 @@ if ([string]::IsNullOrWhiteSpace($CloudflaredConfig)) {
         Join-Path $env:LOCALAPPDATA "BarArbolada\cloudflared"
     ) "config.yml"
 }
+if ([string]::IsNullOrWhiteSpace($CloudflaredTokenFile)) {
+    $CloudflaredTokenFile = Join-Path (
+        Join-Path $env:LOCALAPPDATA "BarArbolada\cloudflared"
+    ) "tunnel-token.txt"
+}
 
 switch ($Action) {
     "RunApi" {
@@ -672,16 +799,26 @@ switch ($Action) {
 
     "RunTunnel" {
         Assert-CloudflaredExecutable $CloudflaredExe
-        [void](Assert-CloudflaredConfiguration `
-            -Path $CloudflaredConfig `
+        $cloudflaredRuntime = Resolve-CloudflaredRuntime `
+            -ConfigPath $CloudflaredConfig `
+            -TokenFilePath $CloudflaredTokenFile `
             -ResolvedProjectRoot $resolvedProjectRoot `
-            -SkipLocationPolicy)
+            -SkipLocationPolicy
 
-        & $CloudflaredExe `
-            --config $CloudflaredConfig `
-            tunnel `
-            --no-autoupdate `
-            run
+        if ($cloudflaredRuntime.Mode -eq "RemoteManagedToken") {
+            & $CloudflaredExe `
+                tunnel `
+                --no-autoupdate `
+                run `
+                --token-file $cloudflaredRuntime.TokenFilePath
+        }
+        else {
+            & $CloudflaredExe `
+                --config $cloudflaredRuntime.ConfigPath `
+                tunnel `
+                --no-autoupdate `
+                run
+        }
         exit $LASTEXITCODE
     }
 
@@ -691,11 +828,16 @@ switch ($Action) {
             -ResolvedProjectRoot $resolvedProjectRoot `
             -RequireGitIgnored
         Assert-CloudflaredExecutable $CloudflaredExe
-        $apiHostname = Assert-CloudflaredConfiguration `
-            -Path $CloudflaredConfig `
+        $cloudflaredRuntime = Resolve-CloudflaredRuntime `
+            -ConfigPath $CloudflaredConfig `
+            -TokenFilePath $CloudflaredTokenFile `
             -ResolvedProjectRoot $resolvedProjectRoot `
-            -RequireGitIgnored
-        Assert-ApiHostnameAllowed $managerEnvironment $apiHostname
+            -ConfiguredApiHostname $ApiHostname `
+            -RequireGitIgnored `
+            -RequireApiHostname
+        Assert-ApiHostnameAllowed `
+            $managerEnvironment `
+            $cloudflaredRuntime.ApiHostname
         [void](Get-FullExistingPath `
             (Join-Path $resolvedProjectRoot ".venv\Scripts\python.exe") `
             "Python virtual environment")
@@ -708,11 +850,16 @@ switch ($Action) {
             -ResolvedProjectRoot $resolvedProjectRoot `
             -RequireGitIgnored
         Assert-CloudflaredExecutable $CloudflaredExe
-        $apiHostname = Assert-CloudflaredConfiguration `
-            -Path $CloudflaredConfig `
+        $cloudflaredRuntime = Resolve-CloudflaredRuntime `
+            -ConfigPath $CloudflaredConfig `
+            -TokenFilePath $CloudflaredTokenFile `
             -ResolvedProjectRoot $resolvedProjectRoot `
-            -RequireGitIgnored
-        Assert-ApiHostnameAllowed $managerEnvironment $apiHostname
+            -ConfiguredApiHostname $ApiHostname `
+            -RequireGitIgnored `
+            -RequireApiHostname
+        Assert-ApiHostnameAllowed `
+            $managerEnvironment `
+            $cloudflaredRuntime.ApiHostname
 
         $resolvedEnvironmentFile = Get-FullExistingPath `
             $EnvironmentFile `
@@ -720,9 +867,6 @@ switch ($Action) {
         $resolvedCloudflaredExe = Get-FullExistingPath `
             $CloudflaredExe `
             "Cloudflared executable"
-        $resolvedCloudflaredConfig = Get-FullExistingPath `
-            $CloudflaredConfig `
-            "Cloudflared config"
         [void](Get-FullExistingPath `
             (Join-Path $resolvedProjectRoot ".venv\Scripts\python.exe") `
             "Python virtual environment")
@@ -758,13 +902,15 @@ switch ($Action) {
             -ResolvedProjectRoot $resolvedProjectRoot `
             -ResolvedEnvironmentFile $resolvedEnvironmentFile `
             -ResolvedCloudflaredExe $resolvedCloudflaredExe `
-            -ResolvedCloudflaredConfig $resolvedCloudflaredConfig
+            -ResolvedCloudflaredConfig $cloudflaredRuntime.ConfigPath `
+            -ResolvedCloudflaredTokenFile $cloudflaredRuntime.TokenFilePath
         $tunnelArguments = New-RunnerArguments `
             -RunnerAction "RunTunnel" `
             -ResolvedProjectRoot $resolvedProjectRoot `
             -ResolvedEnvironmentFile $resolvedEnvironmentFile `
             -ResolvedCloudflaredExe $resolvedCloudflaredExe `
-            -ResolvedCloudflaredConfig $resolvedCloudflaredConfig
+            -ResolvedCloudflaredConfig $cloudflaredRuntime.ConfigPath `
+            -ResolvedCloudflaredTokenFile $cloudflaredRuntime.TokenFilePath
         $apiTask = New-ManagedTaskDefinition `
             -RunnerAction "RunApi" `
             -Arguments $apiArguments `
