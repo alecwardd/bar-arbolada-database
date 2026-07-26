@@ -1834,7 +1834,12 @@ def get_distributions_total(start: date = None, end: date = None) -> float:
 # ============================================================================
 
 
-def get_full_pnl(start: date = None, end: date = None) -> dict:
+def get_full_pnl(
+    start: date = None,
+    end: date = None,
+    *,
+    include_distributions: bool = True,
+) -> dict:
     """
     Compute full restaurant P&L for a given period.
 
@@ -1956,8 +1961,12 @@ def get_full_pnl(start: date = None, end: date = None) -> dict:
     opex_df = get_expenses_by_type(start, end)
     total_opex = float(opex_df["total_amount"].sum()) if not opex_df.empty else 0.0
 
-    # Distributions
-    total_distributions = get_distributions_total(start, end)
+    # Owner distributions are not needed by the read-only manager API. Allow
+    # that caller to avoid touching the sensitive table at all while preserving
+    # the existing owner dashboard behavior by default.
+    total_distributions = (
+        get_distributions_total(start, end) if include_distributions else 0.0
+    )
 
     # Compute P&L
     gross_profit = net_sales - cogs

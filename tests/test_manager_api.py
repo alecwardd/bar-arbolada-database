@@ -149,7 +149,11 @@ def test_health_is_unauthenticated_and_discloses_no_data(client):
 
 def test_overview_contract_is_explicit_and_redacted(client, monkeypatch, sales_range):
     monkeypatch.setattr(services.queries, "get_daily_sales", lambda start, end: _sales_frame())
-    monkeypatch.setattr(services.queries, "get_full_pnl", lambda start, end: _pnl())
+    monkeypatch.setattr(
+        services.queries,
+        "get_full_pnl",
+        lambda start, end, **kwargs: _pnl(),
+    )
     monkeypatch.setattr(
         services.queries,
         "get_reorder_items",
@@ -250,7 +254,11 @@ def test_overview_presets_are_bounded_and_pass_effective_period(
         return pd.DataFrame()
 
     monkeypatch.setattr(services.queries, "get_daily_sales", sales)
-    monkeypatch.setattr(services.queries, "get_full_pnl", lambda start, end: _pnl())
+    monkeypatch.setattr(
+        services.queries,
+        "get_full_pnl",
+        lambda start, end, **kwargs: _pnl(),
+    )
     monkeypatch.setattr(services.queries, "get_reorder_items", lambda: pd.DataFrame())
 
     response = client.get("/api/v1/overview", params={"preset": preset}, headers=AUTH)
@@ -266,7 +274,11 @@ def test_explicit_overview_start_takes_precedence_over_preset(
     sales_range,
 ):
     monkeypatch.setattr(services.queries, "get_daily_sales", lambda start, end: pd.DataFrame())
-    monkeypatch.setattr(services.queries, "get_full_pnl", lambda start, end: _pnl())
+    monkeypatch.setattr(
+        services.queries,
+        "get_full_pnl",
+        lambda start, end, **kwargs: _pnl(),
+    )
     monkeypatch.setattr(services.queries, "get_reorder_items", lambda: pd.DataFrame())
 
     response = client.get(
@@ -369,7 +381,11 @@ def test_profitability_omits_distributions_and_employee_payroll(
     monkeypatch,
     sales_range,
 ):
-    monkeypatch.setattr(services.queries, "get_full_pnl", lambda start, end: _pnl())
+    monkeypatch.setattr(
+        services.queries,
+        "get_full_pnl",
+        lambda start, end, **kwargs: _pnl(),
+    )
     monkeypatch.setattr(
         services.queries,
         "get_category_profitability",

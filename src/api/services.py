@@ -111,7 +111,11 @@ def resolve_period(
 def build_overview(bounds: PeriodBounds) -> OverviewResponse:
     period = bounds.period
     sales = queries.get_daily_sales(period.start, period.end)
-    pnl_raw = queries.get_full_pnl(period.start, period.end)
+    pnl_raw = queries.get_full_pnl(
+        period.start,
+        period.end,
+        include_distributions=False,
+    )
     alerts = queries.get_reorder_items()
 
     daily = _daily_sales_rows(sales)
@@ -225,7 +229,13 @@ def build_staffing_rush(period: Period) -> StaffingRushResponse:
 
 
 def build_profitability(period: Period) -> ProfitabilityResponse:
-    pnl = _pnl_snapshot(queries.get_full_pnl(period.start, period.end))
+    pnl = _pnl_snapshot(
+        queries.get_full_pnl(
+            period.start,
+            period.end,
+            include_distributions=False,
+        )
+    )
     categories_df = queries.get_category_profitability(period.start, period.end)
     health_raw = queries.get_cost_data_health(period.start, period.end)
 

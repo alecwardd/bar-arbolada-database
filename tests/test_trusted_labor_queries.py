@@ -78,6 +78,31 @@ def test_get_full_pnl_uses_trusted_labor_scope(monkeypatch):
     assert "labor_fixed_daily_costs" in fixed_sql
 
 
+def test_get_full_pnl_can_skip_sensitive_owner_distributions(monkeypatch):
+    revenue = pd.DataFrame([{"net_sales": 1000, "gross_sales": 1200}])
+    cogs = pd.DataFrame([{"total_cogs": 300}])
+    labor = pd.DataFrame([{"labor_cost": 200, "labor_hours": 40}])
+    fixed = pd.DataFrame([{"fixed_labor_cost": 100.0}])
+    _capture_sql(monkeypatch, [revenue, cogs, labor, fixed])
+
+    monkeypatch.setattr(q, "get_expenses_by_type", lambda start, end: pd.DataFrame())
+    monkeypatch.setattr(
+        q,
+        "get_distributions_total",
+        lambda start, end: (_ for _ in ()).throw(
+            AssertionError("owner distributions must not be queried")
+        ),
+    )
+
+    result = q.get_full_pnl(
+        date(2026, 1, 1),
+        date(2026, 1, 31),
+        include_distributions=False,
+    )
+
+    assert result["distributions"] == 0.0
+
+
 def test_get_untrusted_labor_rows_detects_non_lightspeed_rows(monkeypatch):
     captured = _capture_sql(monkeypatch)
     q.get_untrusted_labor_rows(date(2026, 1, 1), date(2026, 1, 31))
