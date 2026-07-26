@@ -1,0 +1,216 @@
+# Sites Manager Dashboard Runbook
+
+This runbook publishes a private, read-only manager dashboard through Sites
+while PostgreSQL, imports, raw files, and the Streamlit operator console remain
+on the local Windows host.
+
+## Boundary
+
+```text
+Authorized Sites user
+  -> private Sites deployment
+  -> same-origin server proxy
+  -> Cloudflare Access Service Auth
+  -> api hostname through Cloudflare Tunnel
+  -> FastAPI on 127.0.0.1:8600
+  -> dedicated PostgreSQL read-only login
+```
+
+Never expose PostgreSQL, Windows file shares, raw report folders, invoice files,
+RDP, or SSH. Do not copy production analytics into Sites D1 or R2.
+
+The manager site is read-only. Streamlit remains a separate operator surface
+because it contains invoice, expense, payroll, inventory, recipe, scheduling,
+and employee write operations.
+
+## Data Contract
+
+The manager API is under `src/api/` and documents its response contracts in
+`src/api/README.md`.
+
+It exposes only:
+
+- period-level sales and operating KPIs
+- daily sales aggregates
+- aggregate staffing efficiency without employee identity
+- aggregate profitability and cost-data coverage
+- inventory quantities from ledger `closing_qty`
+- redacted import health and log summaries
+
+Every response contains provenance with its generation time, data-as-of date,
+source query IDs, and an explicit assumptions list.
+
+The API excludes:
+
+- employee names, IDs, contact details, shifts, roles, and individual pay
+- owner distributions and retained cash
+- raw filenames, file paths, staging directories, hashes, and error details
+- invoice uploads or other raw documents
+- arbitrary SQL or generic query endpoints
+
+## Local Configuration
+
+Add these values to the ignored local `.env`:
+
+```dotenv
+MANAGER_API_TOKEN=<long random server-only token>
+MANAGER_DATABASE_URL=postgresql://bar_manager_read:<password>@localhost:5432/bar_arbolada
+MANAGER_API_ALLOWED_HOSTS=127.0.0.1,localhost,api.example.com
+MANAGER_API_ALLOWED_ORIGINS=
+MANAGER_API_ENABLE_DOCS=
+```
+
+`MANAGER_API_TOKEN` must be at least 32 characters. Never use a
+`NEXT_PUBLIC_*` variable for it.
+
+Create a dedicated PostgreSQL login with:
+
+- `CONNECT` on the Bar Arbolada database
+- `USAGE` on the application schema
+- `SELECT` only on the tables or reporting views used by `src/api/services.py`
+- default read-only transactions
+- a short statement timeout
+
+Do not reuse the importer or Streamlit database credential. The startup helper
+copies `MANAGER_DATABASE_URL` into the API process as `DATABASE_URL`; other
+local jobs are unaffected.
+
+For a temporary local-only smoke test, the startup helper accepts
+`-AllowSharedDatabaseCredential`. Never use that switch for the tunnel service.
+
+## Start And Verify Locally
+
+Start PostgreSQL, then:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start_manager_api.ps1
+```
+
+Expected listeners:
+
+- FastAPI: `127.0.0.1:8600`
+- Streamlit fallback: `127.0.0.1:8501`
+
+`GET /health` is unauthenticated and returns only process liveness. All
+`/api/v1/**` routes require the server-only bearer token. API documentation is
+disabled unless `MANAGER_API_ENABLE_DOCS=true`.
+
+Verify:
+
+- missing or incorrect bearer token is rejected
+- unsupported methods are rejected
+- a range longer than 366 days is rejected
+- responses have `Cache-Control: private, no-store`
+- no employee identity, owner distributions, filenames, paths, hashes, or
+  errors appear in responses
+- the read-only PostgreSQL login cannot execute `INSERT`, `UPDATE`, or `DELETE`
+
+## Protected Cloudflare Tunnel
+
+Use a named Cloudflare Tunnel, not a quick/public tunnel and not router port
+forwarding.
+
+Add a second exact ingress hostname:
+
+```yaml
+ingress:
+  - hostname: analytics.example.com
+    service: http://127.0.0.1:8501
+  - hostname: api.example.com
+    service: http://127.0.0.1:8600
+  - service: http_status:404
+```
+
+Keep the existing human email policy on the Streamlit hostname. The API
+hostname needs a Cloudflare Access Service Auth policy for one Sites service
+token. Store its client ID and secret only in Sites runtime secrets.
+
+The Sites server proxy sends:
+
+- `CF-Access-Client-Id`
+- `CF-Access-Client-Secret`
+- the API bearer token
+
+Browser JavaScript never receives any of these values. Production CORS remains
+disabled because browsers call the same-origin Sites proxy.
+
+## Sites Runtime Values
+
+Set these through Sites, never in `.openai/hosting.json`:
+
+```text
+BAR_API_BASE_URL=https://api.example.com
+MANAGER_API_TOKEN=<same server-only API token>
+CF_ACCESS_CLIENT_ID=<Cloudflare service token ID>
+CF_ACCESS_CLIENT_SECRET=<Cloudflare service token secret>
+BAR_MANAGER_EMAILS=<comma-separated active workspace user emails>
+```
+
+Mark all values except `BAR_API_BASE_URL` as secrets.
+
+Use Sites custom access. Add only active users in the owning OpenAI workspace.
+Managers who are not workspace users continue through the separately protected
+Streamlit hostname until an approved external-identity path exists.
+
+## Deployment And Live Editing
+
+The live Sites version remains available while source changes are developed and
+tested. A new version replaces it only after:
+
+1. Python tests pass.
+2. The Sites production build and rendered-shell tests pass.
+3. Source is reviewed for secrets and local-only files.
+4. The exact source commit is saved as a Sites version.
+5. The private version is deployed.
+
+Runtime environment changes also require deploying a saved version to take
+effect.
+
+Prefer backward-compatible API and schema changes:
+
+1. deploy additive database/API support
+2. deploy the compatible Sites version
+3. remove obsolete fields only in a later release
+
+Rollback by redeploying the prior Sites version. To revoke remote data access
+immediately, revoke the Cloudflare service token or remove the API ingress.
+Streamlit and local ingestion remain unchanged.
+
+## Service Operation
+
+Run FastAPI and `cloudflared` as auto-starting Windows services with
+restart-on-failure. Keep the host awake during required access hours.
+
+Monitor:
+
+- local API liveness
+- bounded database readiness
+- tunnel health
+- latest data-as-of timestamp
+- last successful import snapshot/log
+- Sites worker errors without logging headers, emails, query strings, SQL
+  parameters, response data, or secrets
+
+If the site reports that local analytics are unavailable:
+
+1. confirm the Windows host and internet connection
+2. confirm PostgreSQL is running
+3. confirm FastAPI is listening only on `127.0.0.1:8600`
+4. confirm the named tunnel service is running
+5. confirm Cloudflare Access service-token validity
+6. confirm Sites runtime variables are present
+7. use Streamlit only if the viewer is authorized for its write-capable surface
+
+## Future Writes
+
+Remain read-only through production validation. Any future manager write route
+is a separate architecture decision requiring:
+
+- role-specific authorization
+- CSRF protection
+- idempotency and conflict handling
+- user-attributed audit records
+- transaction and rollback tests
+- an explicit decision on which roles may perform the action
+
+Do not add writes by extending the read API casually.

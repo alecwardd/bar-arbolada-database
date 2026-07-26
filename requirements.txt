@@ -10,7 +10,7 @@ alembic
 pandas
 polars
 
-# Web API (for future use)
+# Read-only manager Web API
 fastapi
 uvicorn[standard]
 

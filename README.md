@@ -158,6 +158,7 @@ Current tests cover import-status snapshot serialization and trusted-labor query
 
 ```text
 src/
+  api/                    Read-only, redacted manager API for the Sites app
   config.py              Database connection and project paths
   models.py              SQLAlchemy schema for the analytics warehouse
   importers/             Lightspeed CSV parsers and invoice PDF parsing
@@ -179,12 +180,14 @@ scripts/
   import_from_email.py   Email attachment ingestion with staging/status output
   compare_bookkeeper_pl.py  QuickBooks P&L reconciliation
   start_dashboard.ps1    Local-only Streamlit startup helper
+  start_manager_api.ps1  Loopback-only manager API startup helper
   run_email_import.ps1   Task Scheduler-friendly import wrapper
 
 alembic/                 Database migrations
 planning-documents/      Local deployment and ingestion runbooks
 ops/cloudflared/         Example Cloudflare Tunnel config
 tests/                   Focused pytest coverage
+web/                     Sites-hosted private manager dashboard
 ```
 
 ## Local Multi-User Access
@@ -198,6 +201,31 @@ The operating model is:
 - Run Streamlit on `127.0.0.1`.
 - Publish only the dashboard through Cloudflare Tunnel.
 - Restrict access with Cloudflare Access email allowlisting.
+
+## Sites Manager Dashboard
+
+`web/` is a private, read-only manager presentation tier. It deliberately does
+not contain production data and does not connect to PostgreSQL directly.
+
+The trust path is:
+
+```text
+Private Sites access
+  -> same-origin server proxy in web/
+  -> protected Cloudflare Tunnel API hostname
+  -> FastAPI on 127.0.0.1:8600
+  -> dedicated PostgreSQL read-only role
+```
+
+The manager API exposes explicit response models for overview, daily sales,
+aggregate staffing, profitability, ledger-backed inventory health, and import
+operations. It excludes employee identity and individual pay, owner
+distributions, raw filenames and paths, hashes, and importer error details.
+
+The Streamlit application remains the separately authorized owner/operator
+fallback and retains all write tools. See
+[`planning-documents/sites-manager-dashboard-runbook.md`](planning-documents/sites-manager-dashboard-runbook.md)
+for access, deployment, recovery, and live-edit procedures.
 
 ## P&L Reconciliation
 

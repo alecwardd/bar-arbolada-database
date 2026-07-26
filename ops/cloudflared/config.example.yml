@@ -4,4 +4,7 @@ credentials-file: C:\Users\REPLACE_ME\.cloudflared\REPLACE_WITH_TUNNEL_UUID.json
 ingress:
   - hostname: analytics.example.com
     service: http://localhost:8501
+  # Protect this hostname with a Cloudflare Access Service Auth policy.
+  - hostname: api.example.com
+    service: http://127.0.0.1:8600
   - service: http_status:404
