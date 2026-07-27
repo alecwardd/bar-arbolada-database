@@ -1,6 +1,12 @@
+from pathlib import Path
+
 import pytest
 
 from scripts import provision_manager_db_role as provisioning
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WRAPPER = ROOT / "scripts" / "provision_manager_db_role.ps1"
 
 
 def test_manager_role_defaults_are_fixed_and_safe():
@@ -85,3 +91,15 @@ def test_environment_output_must_stay_under_local_appdata(monkeypatch, tmp_path)
     assert provisioning._environment_output_path(str(allowed)) == allowed.resolve()
     with pytest.raises(RuntimeError):
         provisioning._environment_output_path(str(outside))
+
+
+def test_wrapper_defaults_to_a_password_only_administrator_prompt():
+    source = WRAPPER.read_text(encoding="utf-8")
+
+    assert '[string]$AdministratorInput = "Password"' in source
+    assert '[string]$AdministratorHost = "localhost"' in source
+    assert '[string]$AdministratorUser = "postgres"' in source
+    assert "[Uri]::EscapeDataString($administratorPassword)" in source
+    assert "Password for PostgreSQL administrator" in source
+    assert "$env:MANAGER_DB_ADMIN_URL = $adminUrl" in source
+    assert "Write-Output $adminUrl" not in source

@@ -88,9 +88,10 @@ powershell -ExecutionPolicy Bypass `
   -ApiHostname manager-api.internal
 ```
 
-The wrapper prompts securely only for a one-time administrator URL. It
-generates the manager database password and API bearer token, writes the
-resulting API environment to
+The wrapper prompts securely only for the local `postgres` administrator
+password and constructs the connection URL in process memory. Advanced setups
+can opt into `-AdministratorInput Url`. It generates the manager database
+password and API bearer token, writes the resulting API environment to
 `%LOCALAPPDATA%\BarArbolada\manager-api.env`, restricts its ACL, clears all
 process secrets on exit, and never displays them. It grants only the exact
 columns declared by
@@ -99,6 +100,11 @@ another role, a required table/column is missing, the transaction is not
 read-only, or the login can read employee names, raw import filenames, or owner
 distributions. The currently optional `import_run_snapshots` grant is skipped
 when its migration has not been applied; rerun provisioning after adding it.
+
+See
+[`local-postgresql-operations.md`](local-postgresql-operations.md) for the
+verified PostgreSQL 17 paths, start/stop commands, administrator-login command,
+password-location checklist, and future password-manager record.
 
 For a temporary local-only smoke test, the startup helper accepts
 `-AllowSharedDatabaseCredential`. Never use that switch for the tunnel service.

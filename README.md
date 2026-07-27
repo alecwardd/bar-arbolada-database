@@ -230,6 +230,9 @@ The Streamlit application remains the separately authorized owner/operator
 fallback and retains all write tools. See
 [`planning-documents/sites-manager-dashboard-runbook.md`](planning-documents/sites-manager-dashboard-runbook.md)
 for access, deployment, recovery, and live-edit procedures.
+Local PostgreSQL startup and administrator credential recovery are documented
+separately in
+[`planning-documents/local-postgresql-operations.md`](planning-documents/local-postgresql-operations.md).
 
 ## P&L Reconciliation
 

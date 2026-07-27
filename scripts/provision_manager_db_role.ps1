@@ -5,7 +5,19 @@ param(
         Join-Path $env:LOCALAPPDATA "BarArbolada\manager-api.env"
     ),
 
-    [string]$ApiHostname = ""
+    [string]$ApiHostname = "",
+
+    [ValidateSet("Password", "Url")]
+    [string]$AdministratorInput = "Password",
+
+    [string]$AdministratorHost = "localhost",
+
+    [ValidateRange(1, 65535)]
+    [int]$AdministratorPort = 5432,
+
+    [string]$AdministratorUser = "postgres",
+
+    [string]$AdministratorDatabase = "bar_arbolada"
 )
 
 $pythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
@@ -34,12 +46,53 @@ function New-TaskSecret {
         Replace("+", "-").Replace("/", "_")
 }
 
-$adminUrlSecret = Read-Host `
-    "PostgreSQL administrator URL for the local bar_arbolada database" `
-    -AsSecureString
+$adminUrlSecret = $null
+$administratorPasswordSecret = $null
+$adminUrl = $null
+
+if ($AdministratorInput -eq "Url") {
+    $adminUrlSecret = Read-Host `
+        "PostgreSQL administrator URL for the local bar_arbolada database" `
+        -AsSecureString
+    $adminUrl = ConvertFrom-TaskSecureString $adminUrlSecret
+}
+else {
+    if ($AdministratorHost -notmatch "^[A-Za-z0-9.-]+$") {
+        throw "AdministratorHost must be one local hostname or IPv4 address."
+    }
+    foreach ($identifier in @(
+        $AdministratorUser,
+        $AdministratorDatabase
+    )) {
+        if ($identifier -notmatch "^[A-Za-z_][A-Za-z0-9_]*$") {
+            throw "PostgreSQL user and database names must be simple identifiers."
+        }
+    }
+
+    $administratorPasswordSecret = Read-Host (
+        "Password for PostgreSQL administrator " +
+        "$AdministratorUser@$AdministratorHost`:$AdministratorPort"
+    ) -AsSecureString
+    $administratorPassword = ConvertFrom-TaskSecureString (
+        $administratorPasswordSecret
+    )
+    try {
+        $encodedUser = [Uri]::EscapeDataString($AdministratorUser)
+        $encodedPassword = [Uri]::EscapeDataString($administratorPassword)
+        $encodedDatabase = [Uri]::EscapeDataString($AdministratorDatabase)
+        $adminUrl = (
+            "postgresql://${encodedUser}:${encodedPassword}@" +
+            "$AdministratorHost`:$AdministratorPort/$encodedDatabase"
+        )
+    }
+    finally {
+        $administratorPassword = $null
+        $encodedPassword = $null
+    }
+}
 
 try {
-    $env:MANAGER_DB_ADMIN_URL = ConvertFrom-TaskSecureString $adminUrlSecret
+    $env:MANAGER_DB_ADMIN_URL = $adminUrl
     $env:MANAGER_DATABASE_PASSWORD = New-TaskSecret
     $env:MANAGER_API_TOKEN = New-TaskSecret
     $env:MANAGER_ENV_OUTPUT_PATH = [IO.Path]::GetFullPath(
@@ -78,6 +131,13 @@ try {
     )
 }
 finally {
+    $adminUrl = $null
+    if ($null -ne $adminUrlSecret) {
+        $adminUrlSecret.Dispose()
+    }
+    if ($null -ne $administratorPasswordSecret) {
+        $administratorPasswordSecret.Dispose()
+    }
     Remove-Item Env:\MANAGER_DB_ADMIN_URL -ErrorAction SilentlyContinue
     Remove-Item Env:\MANAGER_DATABASE_PASSWORD -ErrorAction SilentlyContinue
     Remove-Item Env:\MANAGER_API_TOKEN -ErrorAction SilentlyContinue
