@@ -120,9 +120,20 @@ def build_overview(bounds: PeriodBounds) -> OverviewResponse:
     net_sales = sum(row.net_sales for row in daily)
     total_checks = sum(row.total_checks for row in daily)
     check_values = [row.check_avg for row in daily if row.check_avg is not None]
+    avg_daily = net_sales / len(daily) if daily else 0.0
+    avg_check = sum(check_values) / len(check_values) if check_values else None
     alert_rows = [
         _reorder_alert(row) for _, row in alerts.head(MAX_OVERVIEW_ALERTS).iterrows()
     ]
+
+    (
+        net_sales_delta,
+        avg_daily_delta,
+        avg_check_delta,
+        prime_delta,
+        labor_delta,
+        cogs_delta,
+    ) = _prior_period_deltas(bounds, net_sales, avg_daily, avg_check, pnl)
 
     return OverviewResponse(
         provenance=_provenance(
@@ -138,18 +149,81 @@ def build_overview(bounds: PeriodBounds) -> OverviewResponse:
         available_range=bounds.available_range,
         kpis=OverviewKpis(
             net_sales=net_sales,
-            avg_daily_sales=net_sales / len(daily) if daily else 0.0,
-            avg_check=sum(check_values) / len(check_values) if check_values else None,
+            avg_daily_sales=avg_daily,
+            avg_check=avg_check,
             total_checks=total_checks,
             trading_days=len(daily),
             prime_cost_pct=pnl.prime_cost_pct,
             labor_pct=pnl.labor_pct,
             cogs_pct=pnl.cogs_pct,
+            net_sales_delta=net_sales_delta,
+            avg_daily_sales_delta=avg_daily_delta,
+            avg_check_delta=avg_check_delta,
+            prime_cost_pct_delta=prime_delta,
+            labor_pct_delta=labor_delta,
+            cogs_pct_delta=cogs_delta,
         ),
         daily=daily,
         pnl=pnl,
         reorder_alerts=alert_rows,
         reorder_alerts_truncated=len(alerts.index) > MAX_OVERVIEW_ALERTS,
+    )
+
+
+def _prior_period_deltas(
+    bounds: PeriodBounds,
+    net_sales: float,
+    avg_daily: float,
+    avg_check: float | None,
+    pnl: PnlSnapshot,
+) -> tuple[
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+]:
+    """Compare the selected window to the immediately prior equal-length window."""
+
+    period = bounds.period
+    prior_end = period.start - timedelta(days=1)
+    if prior_end < bounds.available_range.start:
+        return (None, None, None, None, None, None)
+
+    prior_start = prior_end - timedelta(days=period.days - 1)
+    if prior_start < bounds.available_range.start:
+        return (None, None, None, None, None, None)
+
+    prior_daily = _daily_sales_rows(
+        queries.get_daily_sales(prior_start, prior_end)
+    )
+    if not prior_daily:
+        return (None, None, None, None, None, None)
+
+    prior_pnl = _pnl_snapshot(
+        queries.get_full_pnl(
+            prior_start,
+            prior_end,
+            include_distributions=False,
+        )
+    )
+    prior_net = sum(row.net_sales for row in prior_daily)
+    prior_avg_daily = prior_net / len(prior_daily)
+    prior_checks = [row.check_avg for row in prior_daily if row.check_avg is not None]
+    prior_avg_check = (
+        sum(prior_checks) / len(prior_checks) if prior_checks else None
+    )
+
+    return (
+        net_sales - prior_net,
+        avg_daily - prior_avg_daily,
+        (avg_check - prior_avg_check)
+        if avg_check is not None and prior_avg_check is not None
+        else None,
+        pnl.prime_cost_pct - prior_pnl.prime_cost_pct,
+        pnl.labor_pct - prior_pnl.labor_pct,
+        pnl.cogs_pct - prior_pnl.cogs_pct,
     )
 
 

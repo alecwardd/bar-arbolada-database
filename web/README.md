@@ -25,11 +25,14 @@ Create an ignored `.env.local` with:
 ```dotenv
 BAR_API_BASE_URL=http://127.0.0.1:8600
 MANAGER_API_TOKEN=<local development token>
+RESEND_API_KEY=<optional local Resend key>
+FEEDBACK_TO_EMAIL=<your inbox>
+FEEDBACK_FROM_EMAIL=Bar Arbolada Analytics <onboarding@resend.dev>
 ```
 
 Production additionally requires an HTTPS API URL, Cloudflare Access service
-credentials, an HMAC audit key, an exact email-to-role map, and a private Sites
-access policy. Secrets are server-side only; the browser calls
-`/api/manager/*` on the same origin. See
-`../planning-documents/sites-manager-dashboard-runbook.md` for setup,
-deployment, rotation, and rollback.
+credentials, an HMAC audit key, an exact email-to-role map, Resend feedback
+secrets, and a private Sites access policy. Secrets are server-side only; the
+browser calls `/api/manager/*`, `/api/me`, and `/api/feedback` on the same
+origin. See `../planning-documents/sites-manager-dashboard-runbook.md` for
+setup, deployment, rotation, and rollback.

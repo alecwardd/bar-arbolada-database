@@ -13,6 +13,7 @@ Public GET routes and top-level response keys:
 
 - `/api/v1/overview`: `provenance`, `period`, `available_range`, `kpis`, `daily`, `pnl`,
   `reorder_alerts`, `reorder_alerts_truncated`
+  (`kpis` includes prior equal-length-period deltas when history allows)
 - `/api/v1/daily-sales`: `provenance`, `period`, `totals`, `daily`
 - `/api/v1/staffing-rush`: `provenance`, `period`, `kpis`, `daily`, `hourly`
 - `/api/v1/profitability`: `provenance`, `period`, `pnl`, `categories`, `cost_health`

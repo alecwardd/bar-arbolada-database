@@ -201,6 +201,12 @@ def test_overview_contract_is_explicit_and_redacted(client, monkeypatch, sales_r
         "prime_cost_pct",
         "labor_pct",
         "cogs_pct",
+        "net_sales_delta",
+        "avg_daily_sales_delta",
+        "avg_check_delta",
+        "prime_cost_pct_delta",
+        "labor_pct_delta",
+        "cogs_pct_delta",
     }
     assert set(payload["pnl"]) == {
         "net_sales",
@@ -265,7 +271,9 @@ def test_overview_presets_are_bounded_and_pass_effective_period(
     assert response.status_code == 200
     assert response.json()["period"]["start"] == expected_start
     assert response.json()["period"]["end"] == "2026-03-31"
-    assert calls == [(date.fromisoformat(expected_start), date(2026, 3, 31))]
+    assert calls[0] == (date.fromisoformat(expected_start), date(2026, 3, 31))
+    # Equal-length prior window is loaded when history allows comparison.
+    assert all(start <= end for start, end in calls)
 
 
 def test_explicit_overview_start_takes_precedence_over_preset(

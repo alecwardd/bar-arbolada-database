@@ -229,11 +229,20 @@ CF_ACCESS_CLIENT_ID=<same value as Worker RELAY_CLIENT_ID>
 CF_ACCESS_CLIENT_SECRET=<same value as Worker RELAY_CLIENT_SECRET>
 BAR_AUDIT_HASH_KEY=<random HMAC key for pseudonymous read audit IDs>
 BAR_MANAGER_ROLES=<email=viewer,email=manager,email=owner>
+RESEND_API_KEY=<Resend API key for partner feedback email>
+FEEDBACK_TO_EMAIL=<owner inbox that receives feedback>
+FEEDBACK_FROM_EMAIL=Bar Arbolada Analytics <onboarding@resend.dev>
 ```
 
 Mark all values except `BAR_API_BASE_URL` as secrets. `BAR_MANAGER_EMAILS`
 remains a compatibility fallback that assigns the `manager` role, but new
 deployments should use `BAR_MANAGER_ROLES`.
+
+Partner feedback posts to `/api/feedback` and emails `FEEDBACK_TO_EMAIL` through
+Resend. Logs record only a request ID, HMAC-pseudonymous actor ID, role, and
+kind — never the message body or email address. Until Resend is configured, the
+Send Feedback control returns a clear configuration error instead of failing
+open.
 
 Use Sites custom access. Add only active users in the owning OpenAI workspace.
 Managers who are not workspace users continue through the separately protected

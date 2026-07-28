@@ -24,18 +24,18 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(origin),
-    title: "Bar Arbolada Manager Analytics",
+    title: "Bar Arbolada Partner Analytics",
     description:
-      "A private, read-only operating pulse for Bar Arbolada managers.",
+      "A private, read-only operating pulse for Bar Arbolada partners.",
     openGraph: {
-      title: "Bar Arbolada Manager Analytics",
-      description: "A private, read-only operating pulse for Bar Arbolada managers.",
+      title: "Bar Arbolada Partner Analytics",
+      description: "A private, read-only operating pulse for Bar Arbolada partners.",
       images: [{ url: socialImage, width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Bar Arbolada Manager Analytics",
-      description: "A private, read-only operating pulse for Bar Arbolada managers.",
+      title: "Bar Arbolada Partner Analytics",
+      description: "A private, read-only operating pulse for Bar Arbolada partners.",
       images: [socialImage],
     },
   };

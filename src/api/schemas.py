@@ -62,6 +62,12 @@ class OverviewKpis(StrictResponse):
     prime_cost_pct: float
     labor_pct: float
     cogs_pct: float
+    net_sales_delta: float | None = None
+    avg_daily_sales_delta: float | None = None
+    avg_check_delta: float | None = None
+    prime_cost_pct_delta: float | None = None
+    labor_pct_delta: float | None = None
+    cogs_pct_delta: float | None = None
 
 
 class DailySalesRow(StrictResponse):
