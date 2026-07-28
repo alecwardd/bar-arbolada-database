@@ -23,6 +23,29 @@ The manager site is read-only. Streamlit remains a separate operator surface
 because it contains invoice, expense, payroll, inventory, recipe, scheduling,
 and employee write operations.
 
+## Current Production Deployment
+
+Verified on 2026-07-27:
+
+```text
+Site: https://bar-arbolada-managers.alecwardd.chatgpt.site
+Sites version: 2
+Sites environment revision: 2
+Access: custom, site owner only
+PostgreSQL: automatic Windows service postgresql-x64-17
+Manager API: 127.0.0.1:8600 only
+Relay: https://bar-arbolada-manager-relay.alecwardd.workers.dev
+```
+
+The production relay rejects unauthenticated requests. Its authenticated
+`/health` and `/ready` checks must both return HTTP 200 before Sites is
+redeployed. Do not record user emails, tokens, opaque Sites identifiers, or
+Cloudflare credentials in this runbook.
+
+Opening the private site requires **Continue with ChatGPT** and may require the
+user's normal OpenAI multi-factor authentication. An operator must never copy a
+one-time code into a ticket, shell command, runbook, or chat transcript.
+
 ## Data Contract
 
 The manager API is under `src/api/` and documents its response contracts in
@@ -216,6 +239,16 @@ Use Sites custom access. Add only active users in the owning OpenAI workspace.
 Managers who are not workspace users continue through the separately protected
 Streamlit hostname until an approved external-identity path exists.
 
+Adding a manager is a two-part change:
+
+1. add the active workspace user to the site's custom access list
+2. add the exact lower-case email to `BAR_MANAGER_ROLES` with `viewer` or
+   `manager`, then deploy a saved Sites version so the new environment revision
+   takes effect
+
+Removing a manager requires removing both entries and redeploying. Never make
+the site public merely to work around account onboarding.
+
 The Sites proxy fails closed unless the user has an exact configured role and
 all service/audit secrets are present. Successful and failed upstream reads log
 only a request ID, HMAC-pseudonymous actor ID, role, route allowlist key, status,
@@ -347,6 +380,12 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 be 200 before activating the Sites API runtime values. `ReadinessHttpStatus`
 503 with liveness 200 specifically means the API process is up but PostgreSQL
 did not pass the bounded probe.
+
+The startup tasks run as SYSTEM and their ACL can hide their definitions from
+a non-elevated shell. Run `-Action Status` from an elevated PowerShell window
+when the task states appear as `NotInstalled` even though the loopback API and
+tunnel processes are running. Treat HTTP 200 health/readiness plus the
+elevated task state as the authoritative check.
 
 After a local config or executable change, restart only the two exact tasks:
 

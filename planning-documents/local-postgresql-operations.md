@@ -22,29 +22,57 @@ psql: C:\Program Files\PostgreSQL\17\bin\psql.exe
 pg_ctl: C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe
 pgAdmin: C:\Program Files\PostgreSQL\17\pgAdmin 4\runtime\pgAdmin4.exe
 pgAdmin registered server: PostgreSQL 17
+Windows service: postgresql-x64-17
+Service startup: Automatic
+Service account: LocalSystem
 ```
 
 The application role is not a PostgreSQL administrator and cannot create the
-dedicated manager role. The PostgreSQL server is currently a manual
-`pg_ctl` installation rather than a Windows service, so it must be started
-after a reboot until the service registration is completed.
+dedicated manager role. PostgreSQL now runs as the automatic
+`postgresql-x64-17` Windows service. Do not start a second manual `pg_ctl`
+instance against the same data directory while that service is running.
 
 ## Check, Start, And Stop
 
-Run these from PowerShell. They never contain a credential.
+Run these from an elevated PowerShell window. They never contain a credential.
+
+```powershell
+Get-Service -Name "postgresql-x64-17"
+Start-Service -Name "postgresql-x64-17"
+Stop-Service -Name "postgresql-x64-17"
+```
+
+Use `Stop-Service` only during an intentional maintenance window. Imports,
+Streamlit, and the manager site cannot read data while PostgreSQL is stopped.
+
+`pg_ctl status` remains a useful credential-free diagnostic:
 
 ```powershell
 $pgRoot = "C:\Program Files\PostgreSQL\17"
 $data = Join-Path $pgRoot "data"
-$log = Join-Path $env:LOCALAPPDATA "BarArbolada\postgresql-start.log"
 
 & (Join-Path $pgRoot "bin\pg_ctl.exe") status -D $data
-& (Join-Path $pgRoot "bin\pg_ctl.exe") start -D $data -l $log -w
-& (Join-Path $pgRoot "bin\pg_ctl.exe") stop -D $data -m fast -w
 ```
 
-Use `stop` only during an intentional maintenance window. Imports, Streamlit,
-and the manager site cannot read data while PostgreSQL is stopped.
+If the Windows service ever has to be recreated, first confirm no PostgreSQL
+process is using this data directory, then run from an elevated PowerShell
+window:
+
+```powershell
+$pgRoot = "C:\Program Files\PostgreSQL\17"
+$data = Join-Path $pgRoot "data"
+
+& (Join-Path $pgRoot "bin\pg_ctl.exe") register `
+  -N "postgresql-x64-17" `
+  -D $data `
+  -S auto
+Start-Service -Name "postgresql-x64-17"
+```
+
+Do not unregister, recreate, or change the service account during ordinary
+recovery. The earlier local-only startup log at
+`%LOCALAPPDATA%\BarArbolada\postgresql-start.log` is historical evidence from
+the pre-service setup, not the current startup path.
 
 ## Administrator Login
 
